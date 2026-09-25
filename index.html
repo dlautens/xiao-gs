@@ -10,6 +10,7 @@
     .ok { color: #0a0; }
     .bad { color: #a00; }
     button { font-size: 1rem; padding: .4rem .8rem; }
+    #pin a { display: inline-block; margin: .4rem .6rem 0 0; font-size: 1.15rem; }
   </style>
 </head>
 <body>
@@ -19,7 +20,7 @@
     <button id="btn" type="button">Connect XIAO-GS</button>
     <span id="st">idle</span>
   </p>
-  <p id="map"></p>
+  <div id="pin">no pin yet</div>
   <pre id="out">no packet</pre>
 <script>
 (function () {
@@ -32,20 +33,16 @@
 
   const st = document.getElementById("st");
   const out = document.getElementById("out");
-  const map = document.getElementById("map");
-  let charDown = null;
+  const pin = document.getElementById("pin");
 
   function setSt(t, ok) {
     st.textContent = t;
     st.className = ok === true ? "ok" : ok === false ? "bad" : "";
   }
 
-  function i16le(v, o) {
-    const n = v.getInt16(o, true);
-    return n;
-  }
   function u16le(v, o) { return v.getUint16(o, true); }
   function u32le(v, o) { return v.getUint32(o, true); }
+  function i16le(v, o) { return v.getInt16(o, true); }
   function i32le(v, o) { return v.getInt32(o, true); }
 
   function parseEnvelope(buf) {
@@ -59,25 +56,21 @@
     if (type !== TYPE_TELEM) return { err: "ignore type " + type, skip: true };
     if (len !== 28) return { err: "type1 len " + len + " != 28" };
     const p = 4;
-    const magicP = v.getUint8(p);
-    const version = v.getUint8(p + 1);
-    const vehicle = v.getUint8(p + 2);
-    const fix = v.getUint8(p + 3);
-    const counter = u32le(v, p + 4);
-    const lat_udeg = i32le(v, p + 8);
-    const lon_udeg = i32le(v, p + 12);
-    const alt_cm = i32le(v, p + 16);
-    const sats = v.getUint8(p + 20);
-    const pdop_x10 = v.getUint8(p + 21);
-    const vbat_dV = v.getUint8(p + 22);
-    const events = v.getUint8(p + 23);
-    const rssi = i16le(v, p + 24);
-    const age_cs = u16le(v, p + 26);
     return {
-      proto_magic: magicP,
-      version, vehicle, fix, counter,
-      lat_udeg, lon_udeg, alt_cm, sats, pdop_x10, vbat_dV, events,
-      rssi, age_cs
+      proto_magic: v.getUint8(p),
+      version: v.getUint8(p + 1),
+      vehicle: v.getUint8(p + 2),
+      fix: v.getUint8(p + 3),
+      counter: u32le(v, p + 4),
+      lat_udeg: i32le(v, p + 8),
+      lon_udeg: i32le(v, p + 12),
+      alt_cm: i32le(v, p + 16),
+      sats: v.getUint8(p + 20),
+      pdop_x10: v.getUint8(p + 21),
+      vbat_dV: v.getUint8(p + 22),
+      events: v.getUint8(p + 23),
+      rssi: i16le(v, p + 24),
+      age_cs: u16le(v, p + 26)
     };
   }
 
@@ -90,22 +83,23 @@
     const lon = t.lon_udeg / 1e6;
     const alt_m = t.alt_cm / 100;
     const haveFix = t.fix === 1 || t.fix === 2;
-    const lines = [
+    out.textContent = [
       "veh " + (VEH[t.vehicle] || t.vehicle) + "  cnt " + t.counter,
       "fix " + (FIX[t.fix] || t.fix) + "  sats " + t.sats + "  pdop " + (t.pdop_x10 / 10).toFixed(1),
       "lat " + lat.toFixed(6) + "  lon " + lon.toFixed(6),
       "alt_m " + alt_m.toFixed(1) + "  vbat " + (t.vbat_dV / 10).toFixed(1) + " V",
       "rssi " + t.rssi + " dBm  age " + (t.age_cs / 100).toFixed(2) + " s",
       "events 0x" + t.events.toString(16) + "  proto " + t.proto_magic.toString(16) + " v" + t.version
-    ];
-    out.textContent = lines.join("\n");
+    ].join("\n");
     if (haveFix) {
       const q = lat.toFixed(6) + "," + lon.toFixed(6);
-      map.innerHTML =
-        "<a href=\"geo:" + q + "?q=" + q + "(XIAO)\">Open Maps</a> · " +
-        "<a href=\"https://maps.google.com/?q=" + q + "\">Google Maps</a>";
+      const label = encodeURIComponent(q + " (XIAO)");
+      pin.innerHTML =
+        "<strong>Pin " + q + "</strong><br>" +
+        "<a href=\"geo:" + q + "?q=" + label + "\">Open pin in Maps</a>" +
+        "<a href=\"https://maps.google.com/?q=" + encodeURIComponent(q) + "\">Google Maps pin</a>";
     } else {
-      map.textContent = "no 2D/3D fix";
+      pin.textContent = "no 2D/3D fix — no pin";
     }
   }
 
@@ -130,7 +124,7 @@
       setSt("connecting " + (dev.name || ""), true);
       const server = await dev.gatt.connect();
       const svc = await server.getPrimaryService(SVC);
-      charDown = await svc.getCharacteristic(DOWN);
+      const charDown = await svc.getCharacteristic(DOWN);
       await charDown.startNotifications();
       charDown.addEventListener("characteristicvaluechanged", onValue);
       try {
