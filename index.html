@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>XIAO GS</title>
+  <style>
+    body { font-family: sans-serif; margin: 1rem; max-width: 40rem; }
+    pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+    .ok { color: #0a0; }
+    .bad { color: #a00; }
+    button { font-size: 1rem; padding: .4rem .8rem; }
+  </style>
+</head>
+<body>
+  <h1>XIAO GS</h1>
+  <p>Phone stays off SoftAP XIAO-GS. Chrome + HTTPS. Web Bluetooth to Heltec.</p>
+  <p>
+    <button id="btn" type="button">Connect XIAO-GS</button>
+    <span id="st">idle</span>
+  </p>
+  <p id="map"></p>
+  <pre id="out">no packet</pre>
+<script>
+(function () {
+  const SVC  = "8aa1a001-c0de-4b1e-9a11-58414f2d4753";
+  const DOWN = "8aa1a002-c0de-4b1e-9a11-58414f2d4753";
+  const MAGIC = 0x47;
+  const TYPE_TELEM = 1;
+  const VEH = ["unknown", "T-IO", "2CH", "minimal", "guide"];
+  const FIX = ["none", "2D", "3D"];
+
+  const st = document.getElementById("st");
+  const out = document.getElementById("out");
+  const map = document.getElementById("map");
+  let charDown = null;
+
+  function setSt(t, ok) {
+    st.textContent = t;
+    st.className = ok === true ? "ok" : ok === false ? "bad" : "";
+  }
+
+  function i16le(v, o) {
+    const n = v.getInt16(o, true);
+    return n;
+  }
+  function u16le(v, o) { return v.getUint16(o, true); }
+  function u32le(v, o) { return v.getUint32(o, true); }
+  function i32le(v, o) { return v.getInt32(o, true); }
+
+  function parseEnvelope(buf) {
+    if (buf.byteLength < 4) return { err: "short header " + buf.byteLength };
+    const v = new DataView(buf);
+    const magic = v.getUint8(0);
+    const type = v.getUint8(1);
+    const len = u16le(v, 2);
+    if (magic !== MAGIC) return { err: "bad magic 0x" + magic.toString(16) };
+    if (4 + len > buf.byteLength) return { err: "truncated len=" + len };
+    if (type !== TYPE_TELEM) return { err: "ignore type " + type, skip: true };
+    if (len !== 28) return { err: "type1 len " + len + " != 28" };
+    const p = 4;
+    const magicP = v.getUint8(p);
+    const version = v.getUint8(p + 1);
+    const vehicle = v.getUint8(p + 2);
+    const fix = v.getUint8(p + 3);
+    const counter = u32le(v, p + 4);
+    const lat_udeg = i32le(v, p + 8);
+    const lon_udeg = i32le(v, p + 12);
+    const alt_cm = i32le(v, p + 16);
+    const sats = v.getUint8(p + 20);
+    const pdop_x10 = v.getUint8(p + 21);
+    const vbat_dV = v.getUint8(p + 22);
+    const events = v.getUint8(p + 23);
+    const rssi = i16le(v, p + 24);
+    const age_cs = u16le(v, p + 26);
+    return {
+      proto_magic: magicP,
+      version, vehicle, fix, counter,
+      lat_udeg, lon_udeg, alt_cm, sats, pdop_x10, vbat_dV, events,
+      rssi, age_cs
+    };
+  }
+
+  function render(t) {
+    if (t.err) {
+      if (!t.skip) out.textContent = t.err;
+      return;
+    }
+    const lat = t.lat_udeg / 1e6;
+    const lon = t.lon_udeg / 1e6;
+    const alt_m = t.alt_cm / 100;
+    const haveFix = t.fix === 1 || t.fix === 2;
+    const lines = [
+      "veh " + (VEH[t.vehicle] || t.vehicle) + "  cnt " + t.counter,
+      "fix " + (FIX[t.fix] || t.fix) + "  sats " + t.sats + "  pdop " + (t.pdop_x10 / 10).toFixed(1),
+      "lat " + lat.toFixed(6) + "  lon " + lon.toFixed(6),
+      "alt_m " + alt_m.toFixed(1) + "  vbat " + (t.vbat_dV / 10).toFixed(1) + " V",
+      "rssi " + t.rssi + " dBm  age " + (t.age_cs / 100).toFixed(2) + " s",
+      "events 0x" + t.events.toString(16) + "  proto " + t.proto_magic.toString(16) + " v" + t.version
+    ];
+    out.textContent = lines.join("\n");
+    if (haveFix) {
+      const q = lat.toFixed(6) + "," + lon.toFixed(6);
+      map.innerHTML =
+        "<a href=\"geo:" + q + "?q=" + q + "(XIAO)\">Open Maps</a> · " +
+        "<a href=\"https://maps.google.com/?q=" + q + "\">Google Maps</a>";
+    } else {
+      map.textContent = "no 2D/3D fix";
+    }
+  }
+
+  function onValue(ev) {
+    const val = ev.target.value;
+    if (!val) return;
+    const copy = val.buffer.slice(val.byteOffset, val.byteOffset + val.byteLength);
+    render(parseEnvelope(copy));
+  }
+
+  async function connect() {
+    if (!navigator.bluetooth) {
+      setSt("no Web Bluetooth (need Chrome HTTPS)", false);
+      return;
+    }
+    setSt("picker…");
+    try {
+      const dev = await navigator.bluetooth.requestDevice({
+        filters: [{ name: "XIAO-GS" }, { services: [SVC] }],
+        optionalServices: [SVC]
+      });
+      setSt("connecting " + (dev.name || ""), true);
+      const server = await dev.gatt.connect();
+      const svc = await server.getPrimaryService(SVC);
+      charDown = await svc.getCharacteristic(DOWN);
+      await charDown.startNotifications();
+      charDown.addEventListener("characteristicvaluechanged", onValue);
+      try {
+        const first = await charDown.readValue();
+        const copy = first.buffer.slice(first.byteOffset, first.byteOffset + first.byteLength);
+        render(parseEnvelope(copy));
+      } catch (e) { /* notify path is enough */ }
+      dev.addEventListener("gattserverdisconnected", function () {
+        setSt("disconnected", false);
+      });
+      setSt("subscribed", true);
+    } catch (e) {
+      setSt(String(e), false);
+    }
+  }
+
+  document.getElementById("btn").addEventListener("click", connect);
+})();
+</script>
+</body>
+</html>
