@@ -3,145 +3,162 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>XIAO GS</title>
+  <title>HT-G4 ground station</title>
   <style>
     body { font-family: sans-serif; margin: 1rem; max-width: 40rem; }
-    pre { background: #f4f4f4; padding: .75rem; overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; }
+    td { padding: .15rem .4rem; border-bottom: 1px solid #ddd; font-family: monospace; }
     .ok { color: #0a0; }
-    .bad { color: #a00; }
+    .bad { color: #a00; font-weight: bold; }
+    .warn { color: #b60; }
     button { font-size: 1rem; padding: .4rem .8rem; }
     #pin a { display: inline-block; margin: .4rem .6rem 0 0; font-size: 1.15rem; }
   </style>
 </head>
 <body>
-  <h1>XIAO GS</h1>
-  <p>Phone stays off SoftAP XIAO-GS. Chrome + HTTPS. Web Bluetooth to Heltec.</p>
+  <h1>HT-G4 ground station</h1>
+  <p>Chrome on Android over HTTPS. Web Bluetooth to the Heltec ground station (XIAO-GS).</p>
   <p>
     <button id="btn" type="button">Connect XIAO-GS</button>
     <span id="st">idle</span>
   </p>
-  <div id="pin">no pin yet</div>
-  <pre id="out">no packet</pre>
+  <div id="flags"></div>
+  <div id="pin">no position yet</div>
+  <h2>Link</h2>
+  <table id="link"></table>
+  <h2>Packet</h2>
+  <table id="pkt"><tr><td>no packet</td></tr></table>
+  <p id="err" class="bad"></p>
+  <!-- Generated codec (proto/gen/htg4_msg.js) and the envelope parser, served beside this page. -->
+  <script src="htg4_msg.js"></script>
+  <script src="gs_envelope.js"></script>
 <script>
 (function () {
-  const SVC  = "8aa1a001-c0de-4b1e-9a11-58414f2d4753";
+  "use strict";
+  /* Same UUIDs as firmware/apps/gs/main/gs_ble.hpp (and xiao-tracker ui_ble.h). */
+  const SVC = "8aa1a001-c0de-4b1e-9a11-58414f2d4753";
   const DOWN = "8aa1a002-c0de-4b1e-9a11-58414f2d4753";
-  const MAGIC = 0x47;
-  const TYPE_TELEM = 1;
-  const VEH = ["unknown", "T-IO", "2CH", "minimal", "guide"];
-  const FIX = ["none", "2D", "3D"];
-
-  const st = document.getElementById("st");
-  const out = document.getElementById("out");
-  const pin = document.getElementById("pin");
+  const WIRE = HTG4Msg.TABLE.wire.find(function (l) { return l.name === "lora_packet"; });
+  const loss = new GsEnvelope.LossCounter();
+  const repeats = new GsEnvelope.RepeatFilter();
+  const $ = function (id) { return document.getElementById(id); };
 
   function setSt(t, ok) {
-    st.textContent = t;
-    st.className = ok === true ? "ok" : ok === false ? "bad" : "";
+    $("st").textContent = t;
+    $("st").className = ok === true ? "ok" : ok === false ? "bad" : "";
   }
 
-  function u16le(v, o) { return v.getUint16(o, true); }
-  function u32le(v, o) { return v.getUint32(o, true); }
-  function i16le(v, o) { return v.getInt16(o, true); }
-  function i32le(v, o) { return v.getInt32(o, true); }
-
-  function parseEnvelope(buf) {
-    if (buf.byteLength < 4) return { err: "short header " + buf.byteLength };
-    const v = new DataView(buf);
-    const magic = v.getUint8(0);
-    const type = v.getUint8(1);
-    const len = u16le(v, 2);
-    if (magic !== MAGIC) return { err: "bad magic 0x" + magic.toString(16) };
-    if (4 + len > buf.byteLength) return { err: "truncated len=" + len };
-    if (type !== TYPE_TELEM) return { err: "ignore type " + type, skip: true };
-    if (len !== 28) return { err: "type1 len " + len + " != 28" };
-    const p = 4;
-    return {
-      proto_magic: v.getUint8(p),
-      version: v.getUint8(p + 1),
-      vehicle: v.getUint8(p + 2),
-      fix: v.getUint8(p + 3),
-      counter: u32le(v, p + 4),
-      lat_udeg: i32le(v, p + 8),
-      lon_udeg: i32le(v, p + 12),
-      alt_cm: i32le(v, p + 16),
-      sats: v.getUint8(p + 20),
-      pdop_x10: v.getUint8(p + 21),
-      vbat_dV: v.getUint8(p + 22),
-      events: v.getUint8(p + 23),
-      rssi: i16le(v, p + 24),
-      age_cs: u16le(v, p + 26)
-    };
+  function rows(el, list) {
+    el.innerHTML = "";
+    list.forEach(function (r) {
+      const tr = document.createElement("tr");
+      const a = document.createElement("td");
+      const b = document.createElement("td");
+      a.textContent = r[0];
+      b.textContent = r[1];
+      if (r[2]) b.className = r[2];
+      tr.appendChild(a);
+      tr.appendChild(b);
+      el.appendChild(tr);
+    });
   }
 
-  function render(t) {
-    if (t.err) {
-      if (!t.skip) out.textContent = t.err;
+  function fieldText(f, v) {
+    if (f.bits) {
+      const names = HTG4Msg.bitNames(f, v);
+      return "0x" + Number(v).toString(16) + (names.length ? " [" + names.join(", ") + "]" : "");
+    }
+    if (f.enum) return String(HTG4Msg.enumName(f, v) || v);
+    const unit = f.unit && f.unit !== "1" ? " " + f.unit : "";
+    return (typeof v === "number" && !Number.isInteger(v) ? v.toFixed(2) : String(v)) + unit;
+  }
+
+  function render(env) {
+    $("err").textContent = "";
+    if (env.err) {
+      if (!env.skip) $("err").textContent = env.err;
       return;
     }
-    const lat = t.lat_udeg / 1e6;
-    const lon = t.lon_udeg / 1e6;
-    const alt_m = t.alt_cm / 100;
-    const haveFix = t.fix === 1 || t.fix === 2;
-    out.textContent = [
-      "veh " + (VEH[t.vehicle] || t.vehicle) + "  cnt " + t.counter,
-      "fix " + (FIX[t.fix] || t.fix) + "  sats " + t.sats + "  pdop " + (t.pdop_x10 / 10).toFixed(1),
-      "lat " + lat.toFixed(6) + "  lon " + lon.toFixed(6),
-      "alt_m " + alt_m.toFixed(1) + "  vbat " + (t.vbat_dV / 10).toFixed(1) + " V",
-      "rssi " + t.rssi + " dBm  age " + (t.age_cs / 100).toFixed(2) + " s",
-      "events 0x" + t.events.toString(16) + "  proto " + t.proto_magic.toString(16) + " v" + t.version
-    ].join("\n");
-    if (haveFix) {
-      const q = lat.toFixed(6) + "," + lon.toFixed(6);
-      const label = encodeURIComponent(q + " (XIAO)");
-      pin.innerHTML =
-        "<strong>Pin " + q + "</strong><br>" +
-        "<a href=\"geo:" + q + "?q=" + label + "\">Open pin in Maps</a>" +
+    const stale = env.ageS === null || env.ageS > GsEnvelope.STALE_AFTER_S;
+    const fresh = repeats.isNew(env);
+    rows($("link"), [
+      ["last packet", env.ageS === null ? "none yet" : (fresh ? "NEW" : "repeat") + ", age " + env.ageS.toFixed(1) + " s" +
+        (stale ? " STALE" : ""), stale ? "bad" : (fresh ? "ok" : "")],
+      ["RSSI", env.rssiDbm + " dBm"],
+      ["SNR", env.snrDb.toFixed(2) + " dB"],
+      ["received", String(env.rxOk)],
+      ["CRC errors", String(env.rxCrcErr), env.rxCrcErr ? "warn" : ""],
+      ["rejected (format/version, A21-4)", String(env.rxRejected), env.rxRejected ? "bad" : ""],
+      ["loss (seq gaps)", loss.missed + " (" + loss.percent().toFixed(1) + " %)", loss.missed ? "warn" : ""],
+    ]);
+    if (!fresh) return; // keepalive repeat: link rows updated above, packet view unchanged
+    let p;
+    try {
+      p = HTG4Msg.decodeWire("lora_packet", env.packet);
+    } catch (e) {
+      $("err").textContent = String(e.message || e);
+      return;
+    }
+    loss.add(p.seq);
+    rows($("pkt"), WIRE.fields.map(function (f) {
+      const bad = (f.name === "health" && p.health) || (f.name === "flags" && (p.flags & 1));
+      return [f.name, fieldText(f, p[f.name]), bad ? "bad" : ""];
+    }));
+    const flags = WIRE.fields.find(function (f) { return f.name === "flags"; });
+    const health = WIRE.fields.find(function (f) { return f.name === "health"; });
+    const set = HTG4Msg.bitNames(flags, p.flags);
+    const faults = HTG4Msg.bitNames(health, p.health);
+    const msgs = [];
+    if (set.indexOf("guide_stale") >= 0) msgs.push("GUIDE STALE (age " + (p.guide_age_ds / 10).toFixed(1) + " s)");
+    if (set.indexOf("gps_valid") < 0) msgs.push("no current GPS fix");
+    if (faults.length) msgs.push("faults: " + faults.join(", "));
+    $("flags").className = msgs.length ? "bad" : "ok";
+    $("flags").textContent = msgs.length ? msgs.join(" | ") : "no faults";
+    const INT32_MIN = -2147483648;
+    if (p.lat_e7 !== INT32_MIN && p.lon_e7 !== INT32_MIN) {
+      const q = (p.lat_e7 / 1e7).toFixed(6) + "," + (p.lon_e7 / 1e7).toFixed(6);
+      const label = encodeURIComponent(q + " (HT-G4)");
+      $("pin").innerHTML = "<strong>" + (set.indexOf("gps_valid") >= 0 ? "Pin " : "Last pin (not current) ") + q +
+        "</strong><br><a href=\"geo:" + q + "?q=" + label + "\">Open pin in Maps</a>" +
         "<a href=\"https://maps.google.com/?q=" + encodeURIComponent(q) + "\">Google Maps pin</a>";
     } else {
-      pin.textContent = "no 2D/3D fix — no pin";
+      $("pin").textContent = "no fix seen yet, no pin";
     }
   }
 
   function onValue(ev) {
     const val = ev.target.value;
-    if (!val) return;
-    const copy = val.buffer.slice(val.byteOffset, val.byteOffset + val.byteLength);
-    render(parseEnvelope(copy));
+    if (val) render(GsEnvelope.parse(val));
   }
 
   async function connect() {
     if (!navigator.bluetooth) {
-      setSt("no Web Bluetooth (need Chrome HTTPS)", false);
+      setSt("no Web Bluetooth (need Chrome, HTTPS)", false);
       return;
     }
-    setSt("picker…");
+    setSt("picker...");
     try {
       const dev = await navigator.bluetooth.requestDevice({
         filters: [{ name: "XIAO-GS" }, { services: [SVC] }],
-        optionalServices: [SVC]
+        optionalServices: [SVC],
       });
       setSt("connecting " + (dev.name || ""), true);
       const server = await dev.gatt.connect();
       const svc = await server.getPrimaryService(SVC);
-      const charDown = await svc.getCharacteristic(DOWN);
-      await charDown.startNotifications();
-      charDown.addEventListener("characteristicvaluechanged", onValue);
+      const down = await svc.getCharacteristic(DOWN);
+      await down.startNotifications();
+      down.addEventListener("characteristicvaluechanged", onValue);
       try {
-        const first = await charDown.readValue();
-        const copy = first.buffer.slice(first.byteOffset, first.byteOffset + first.byteLength);
-        render(parseEnvelope(copy));
-      } catch (e) { /* notify path is enough */ }
-      dev.addEventListener("gattserverdisconnected", function () {
-        setSt("disconnected", false);
-      });
+        render(GsEnvelope.parse(await down.readValue()));
+      } catch (e) { /* the notify path is enough */ }
+      dev.addEventListener("gattserverdisconnected", function () { setSt("disconnected", false); });
       setSt("subscribed", true);
     } catch (e) {
       setSt(String(e), false);
     }
   }
 
-  document.getElementById("btn").addEventListener("click", connect);
+  $("btn").addEventListener("click", connect);
 })();
 </script>
 </body>
