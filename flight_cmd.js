@@ -160,6 +160,29 @@
     });
   }
 
+  /* One result bit at a time on the wire. The first match is the line the page shows. */
+  function commandStatus(flags) {
+    if ((flags & FLAG.bad_mac) !== 0) return "refused: bad MAC";
+    if ((flags & FLAG.replay) !== 0) return "replay";
+    if ((flags & FLAG.phase) !== 0) return "refused: wrong phase";
+    if ((flags & FLAG.nogo) !== 0) return "refused: NO-GO";
+    if ((flags & FLAG.need_ack) !== 0) return "refused: ack warnings first";
+    if ((flags & FLAG.pyro) !== 0) return "refused: pyro";
+    if ((flags & FLAG.unlock_refused) !== 0) return "refused: unlock";
+    if ((flags & FLAG.accepted) !== 0) return "accepted";
+    return "";
+  }
+
+  /* A fresh safe report does not clear a pending arm. Only a moved phase or a hard refuse does. */
+  function afterDownlink(pendingName, phase, flags, fresh) {
+    let name = pendingName || null;
+    if (fresh && name && commandSettled(name, phase, flags)) name = null;
+    return {
+      pending: name,
+      label: flightLabel({ pending: name, fresh: fresh === true, phase: fresh ? phase : null }),
+    };
+  }
+
   function hardRefuse(flags) {
     const hard = FLAG.bad_mac | FLAG.phase | FLAG.nogo | FLAG.need_ack | FLAG.pyro | FLAG.unlock_refused;
     return (flags & hard) !== 0 && (flags & FLAG.replay) === 0;
@@ -202,6 +225,7 @@
     KEY: KEY, CMD: CMD, PHASE: PHASE, FLAG: FLAG, WAKE_BLE: WAKE_BLE,
     sha256: sha256, macOf: macOf, loadCounter: loadCounter, saveCounter: saveCounter,
     noteEcho: noteEcho, takeCounter: takeCounter, encodeCommand: encodeCommand,
-    commandSettled: commandSettled, flightLabel: flightLabel,
+    commandSettled: commandSettled, commandStatus: commandStatus, afterDownlink: afterDownlink,
+    flightLabel: flightLabel,
   };
 });

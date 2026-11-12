@@ -64,12 +64,35 @@
   const DOWN = "8aa1a002-c0de-4b1e-9a11-58414f2d4753";
   const UP = "8aa1a003-c0de-4b1e-9a11-58414f2d4753";
   let upChar = null;
-  let pending = null;
   let holdArmed = false;
+  const PENDING_KEY = "htg4.flight.pending";
+  function loadPending() {
+    try {
+      const raw = sessionStorage.getItem(PENDING_KEY);
+      if (!raw) return null;
+      const saved = JSON.parse(raw);
+      if (!saved || typeof saved.name !== "string" || !Array.isArray(saved.bytes)) return null;
+      return { name: saved.name, bytes: Uint8Array.from(saved.bytes) };
+    } catch (e) {
+      return null;
+    }
+  }
+  function storePending(value) {
+    try {
+      if (!value) sessionStorage.removeItem(PENDING_KEY);
+      else sessionStorage.setItem(PENDING_KEY, JSON.stringify({ name: value.name, bytes: Array.from(value.bytes) }));
+    } catch (e) { /* private mode keeps the in-memory copy only */ }
+  }
+  /* A reload or a BLE reconnect that reloads the page used to drop this and paint "safe"
+   * from the next beacon, while the Heltec still had the uplink queued. */
+  let pending = loadPending();
   const WIRE = HTG4Msg.TABLE.wire.find(function (l) { return l.name === "lora_packet"; });
   const loss = new GsEnvelope.LossCounter();
   const repeats = new GsEnvelope.RepeatFilter();
   const $ = function (id) { return document.getElementById(id); };
+  if (pending) {
+    $("flight-state").textContent = FlightCmd.flightLabel({ pending: pending.name, fresh: false, phase: null });
+  }
 
   function setSt(t, ok) {
     $("st").textContent = t;
@@ -163,16 +186,18 @@
     const flags = fresh && p ? p.flags : 0;
     if (fresh && p && (flags & FlightCmd.FLAG.guide_stale)) FlightCmd.noteEcho(p.guide_age_ds, true);
     if (fresh && p) holdArmed = p.phase === FlightCmd.PHASE.armed_pad;
-    if (fresh && p && pending && FlightCmd.commandSettled(pending.name, phase, flags)) pending = null;
-    $("flight-state").textContent = FlightCmd.flightLabel({
-      pending: pending ? pending.name : null, fresh: fresh, phase: phase,
-    });
+    const step = FlightCmd.afterDownlink(pending ? pending.name : null, phase, flags, fresh && !!p);
+    if (pending && step.pending == null) {
+      pending = null;
+      storePending(null);
+    }
+    $("flight-state").textContent = step.label;
     const names = [];
     if (fresh && p) {
-      const field = WIRE.fields.find(function (f) { return f.name === "flags"; });
-      HTG4Msg.bitNames(field, flags).forEach(function (n) {
-        if (n.indexOf("cmd_") === 0 || n === "sim" || n === "ble_on") names.push(n);
-      });
+      const status = FlightCmd.commandStatus(flags);
+      if (status) names.push(status);
+      if ((flags & FlightCmd.FLAG.sim) !== 0) names.push("sim");
+      if ((flags & FlightCmd.FLAG.ble_on) !== 0) names.push("ble on");
     }
     $("flight-detail").textContent = "counter " + FlightCmd.loadCounter() +
       (names.length ? "  " + names.join(" ") : "");
@@ -192,7 +217,10 @@
     const counter = FlightCmd.takeCounter();
     const bytes = FlightCmd.encodeCommand(name, counter, wake || 0, HTG4Msg);
     pending = { name: name, bytes: bytes };
-    if (name === "arm") $("flight-state").textContent = "armed (unconfirmed)";
+    storePending(pending);
+    $("flight-state").textContent = FlightCmd.flightLabel({
+      pending: name, fresh: false, phase: null,
+    });
     try { await writeUp(bytes); } catch (e) { $("err").textContent = String(e.message || e); }
   }
 
