@@ -22,7 +22,7 @@ const TABLE = {
      "add": -12,
      "field": "len"
     },
-    "max": 40,
+    "max": 44,
     "name": "pkt"
    },
    "head": {
@@ -1147,12 +1147,26 @@ const TABLE = {
      "offset": 39,
      "type": "u8",
      "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_echo",
+     "offset": 40,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 42,
+     "type": "u16",
+     "unit": "1"
     }
    ],
    "id": 1281,
    "kind": "wire",
    "name": "lora_packet",
-   "size": 40,
+   "size": 44,
    "version": 2
   },
   {

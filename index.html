@@ -186,7 +186,11 @@
     const flags = fresh && p ? p.flags : 0;
     if (fresh && p && (flags & FlightCmd.FLAG.guide_stale)) FlightCmd.noteEcho(p.guide_age_ds, true);
     if (fresh && p) holdArmed = p.phase === FlightCmd.PHASE.armed_pad;
-    const step = FlightCmd.afterDownlink(pending ? pending.name : null, phase, flags, fresh && !!p);
+    const echo = fresh && p ? p.cmd_echo : null;
+    const ctr = pending ? FlightCmd.uplinkCounter(pending.bytes) : null;
+    const matched = FlightCmd.echoMatches(echo, ctr);
+    const had = !!pending;
+    const step = FlightCmd.afterDownlink(pending ? pending.name : null, phase, flags, fresh && !!p, echo, ctr);
     if (pending && step.pending == null) {
       pending = null;
       storePending(null);
@@ -194,8 +198,10 @@
     $("flight-state").textContent = step.label;
     const names = [];
     if (fresh && p) {
-      const status = FlightCmd.commandStatus(flags);
-      if (status) names.push(status);
+      if (!had || matched) {
+        const status = FlightCmd.commandStatus(flags);
+        if (status) names.push(status);
+      }
       if ((flags & FlightCmd.FLAG.sim) !== 0) names.push("sim");
       if ((flags & FlightCmd.FLAG.ble_on) !== 0) names.push("ble on");
     }

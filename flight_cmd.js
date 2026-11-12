@@ -124,6 +124,9 @@
     if (box) box.setItem(STORE, String(n));
   }
 
+  /* guide_age_ds still carries the last accepted replay counter when the Guide is
+   * stale. cmd_echo is the last processed command, including one the XIAO refused
+   * without consuming the counter, so it must not move the next-counter floor. */
   function noteEcho(low16, stale) {
     let n = loadCounter();
     if (stale && n <= 0xffff && low16 > n) {
@@ -131,6 +134,17 @@
       saveCounter(n);
     }
     return n;
+  }
+
+  function uplinkCounter(bytes) {
+    if (!bytes || bytes.length < 8) return null;
+    const u8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes);
+    return new DataView(u8.buffer, u8.byteOffset, u8.byteLength).getUint32(4, true);
+  }
+
+  function echoMatches(echo, counter) {
+    if (echo == null || counter == null) return false;
+    return ((echo >>> 0) & 0xffff) === ((counter >>> 0) & 0xffff);
   }
 
   function takeCounter() {
@@ -173,10 +187,14 @@
     return "";
   }
 
-  /* A fresh safe report does not clear a pending arm. Only a moved phase or a hard refuse does. */
-  function afterDownlink(pendingName, phase, flags, fresh) {
+  /* Settle only when cmd_echo matches this command's counter. A fresh safe report
+   * does not clear a pending arm. A disarm is dropped when the phase is already
+   * pad safe, the same exception the Heltec relay uses before it transmits. */
+  function afterDownlink(pendingName, phase, flags, fresh, echo, counter) {
     let name = pendingName || null;
-    if (fresh && name && commandSettled(name, phase, flags)) name = null;
+    const match = echoMatches(echo, counter);
+    if (fresh && name === "disarm" && phase === PHASE.safe) name = null;
+    else if (fresh && name && match && commandSettled(name, phase, flags)) name = null;
     return {
       pending: name,
       label: flightLabel({ pending: name, fresh: fresh === true, phase: fresh ? phase : null }),
@@ -224,7 +242,8 @@
   return {
     KEY: KEY, CMD: CMD, PHASE: PHASE, FLAG: FLAG, WAKE_BLE: WAKE_BLE,
     sha256: sha256, macOf: macOf, loadCounter: loadCounter, saveCounter: saveCounter,
-    noteEcho: noteEcho, takeCounter: takeCounter, encodeCommand: encodeCommand,
+    noteEcho: noteEcho, uplinkCounter: uplinkCounter, echoMatches: echoMatches,
+    takeCounter: takeCounter, encodeCommand: encodeCommand,
     commandSettled: commandSettled, commandStatus: commandStatus, afterDownlink: afterDownlink,
     flightLabel: flightLabel,
   };
