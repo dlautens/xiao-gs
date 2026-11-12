@@ -29,7 +29,7 @@
       snrDb: dv.getInt16(t + 2, true) / 4,
       ageS: dv.getUint16(t + 4, true) === AGE_NONE ? null : dv.getUint16(t + 4, true) / 100,
       rxOk: dv.getUint16(t + 6, true),
-      rxCrcErr: dv.getUint16(t + 8, true),
+      rxErr: dv.getUint16(t + 8, true), // CRC + LoRa header errors (one count)
       rxRejected: dv.getUint16(t + 10, true),
     };
   }

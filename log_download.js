@@ -1,0 +1,347 @@
+/* XIAO flight-log download (#265). Separate from the Heltec XIAO-GS link in gs_envelope.js.
+ * Wire layout is logdl.hpp. Browser: globalThis.LogDownload. Node: module.exports.
+ * The page saves the file in the browser. It does not upload it anywhere. */
+(function () {
+  "use strict";
+  const DEVICE_NAME = "XIAO-LOG";
+  const SERVICE = "8aa1c001-c0de-4b1e-9a11-58414f2d4753";
+  const STATUS = "8aa1c002-c0de-4b1e-9a11-58414f2d4753";
+  const CONTROL = "8aa1c003-c0de-4b1e-9a11-58414f2d4753";
+  const DATA = "8aa1c004-c0de-4b1e-9a11-58414f2d4753";
+  const PAYLOAD = 200;
+  const MTU = 247;
+  const VERSION = 1;
+  const HEADER = 14;
+  const STATUS_BYTES = 16;
+  const CONTROL_BYTES = 12;
+  const OPCODE_RESUME = 1;
+  const OPCODE_ABORT = 2;
+  const FLAG_LAST = 1;
+  const FLAG_CORRUPT = 2;
+  const FLAG_TRUNCATED = 4;
+  const DENY_ARMED = 1;
+  const DENY_GROUND = 2;
+  const CRC_POLY = 0xedb88320;
+
+  function crc32(bytes) {
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i++) {
+      crc ^= bytes[i];
+      for (let bit = 0; bit < 8; bit++) {
+        const mask = -(crc & 1);
+        crc = (crc >>> 1) ^ (CRC_POLY & mask);
+      }
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function viewOf(buf) {
+    if (buf instanceof DataView) return buf;
+    const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+    return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  }
+
+  function parseStatus(buf) {
+    const dv = viewOf(buf);
+    if (dv.byteLength < STATUS_BYTES) return { err: "short status" };
+    return {
+      version: dv.getUint8(0),
+      deny: dv.getUint8(1),
+      flags: dv.getUint8(2),
+      radio: dv.getUint8(3),
+      logId: dv.getUint32(4, true),
+      sizeBytes: dv.getUint32(8, true),
+      chunkPayload: dv.getUint16(12, true),
+      attMtu: dv.getUint16(14, true),
+    };
+  }
+
+  function parseChunk(buf) {
+    const dv = viewOf(buf);
+    if (dv.byteLength < HEADER) return { err: "short chunk" };
+    const length = dv.getUint16(4, true);
+    if (HEADER + length > dv.byteLength) return { err: "truncated chunk" };
+    const payload = new Uint8Array(dv.buffer, dv.byteOffset + HEADER, length);
+    return {
+      offset: dv.getUint32(0, true),
+      length: length,
+      seq: dv.getUint16(6, true),
+      flags: dv.getUint8(8),
+      crc: dv.getUint32(10, true),
+      payload: payload,
+    };
+  }
+
+  function encodeControl(opcode, logId, offset) {
+    const out = new Uint8Array(CONTROL_BYTES);
+    const dv = new DataView(out.buffer);
+    dv.setUint8(0, opcode);
+    dv.setUint32(4, logId, true);
+    dv.setUint32(8, offset >>> 0, true);
+    return out;
+  }
+
+  function encodeChunk(offset, seq, flags, payload) {
+    const body = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
+    const out = new Uint8Array(HEADER + body.length);
+    const dv = new DataView(out.buffer);
+    dv.setUint32(0, offset >>> 0, true);
+    dv.setUint16(4, body.length, true);
+    dv.setUint16(6, seq, true);
+    dv.setUint8(8, flags);
+    dv.setUint32(10, crc32(body), true);
+    out.set(body, HEADER);
+    return out;
+  }
+
+  function denyText(deny) {
+    if (deny === DENY_ARMED) return "download refused: armed";
+    if (deny === DENY_GROUND) return "download refused: not on the ground";
+    if (deny !== 0) return "download refused: code " + deny;
+    return "";
+  }
+
+  function Receiver(sizeBytes) {
+    this.sizeBytes = sizeBytes;
+    this.offset = 0;
+    this.parts = [];
+    this.done = sizeBytes === 0;
+    this.corrupt = false;
+    this.truncated = false;
+  }
+
+  Receiver.prototype.accept = function (chunk) {
+    if (chunk.err) return { ok: false, reason: chunk.err };
+    if (crc32(chunk.payload) !== chunk.crc) return { ok: false, reason: "crc" };
+    if (chunk.offset + chunk.payload.length === this.offset) return { ok: true, duplicate: true };
+    if (chunk.offset !== this.offset) return { ok: false, reason: "offset" };
+    this.parts.push(new Uint8Array(chunk.payload));
+    this.offset += chunk.payload.length;
+    if (chunk.flags & FLAG_CORRUPT) this.corrupt = true;
+    if (chunk.flags & FLAG_TRUNCATED) this.truncated = true;
+    if (chunk.flags & FLAG_LAST || (this.sizeBytes !== 0 && this.offset >= this.sizeBytes)) this.done = true;
+    return { ok: true };
+  };
+
+  Receiver.prototype.bytes = function () {
+    const out = new Uint8Array(this.offset);
+    let at = 0;
+    this.parts.forEach(function (part) {
+      out.set(part, at);
+      at += part.length;
+    });
+    return out;
+  };
+
+  const LOG_SYNC = 0x4cc3;
+  const LOG_NAME_TYPE = 0x000b;
+  const LOG_HEADER = 12;
+  const LOG_CRC = 4;
+  const LOG_PAYLOAD_MAX = 1024;
+  const LOG_NAME_MAX = 46;
+
+  function nameChar(c) {
+    return (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 45 || c === 95;
+  }
+
+  function nameInLog(bytes) {
+    const data = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    let found = "";
+    let off = 0;
+    while (off + LOG_HEADER + LOG_CRC <= data.length) {
+      const sync = data[off] | (data[off + 1] << 8);
+      if (sync !== LOG_SYNC) {
+        off += 1;
+        continue;
+      }
+      const type = data[off + 2] | (data[off + 3] << 8);
+      const len = data[off + 6] | (data[off + 7] << 8);
+      const frame = LOG_HEADER + len + LOG_CRC;
+      if (len > LOG_PAYLOAD_MAX || off + frame > data.length) {
+        off += 1;
+        continue;
+      }
+      const body = data.subarray(off, off + LOG_HEADER + len);
+      const crcAt = off + LOG_HEADER + len;
+      const crc = (data[crcAt] | (data[crcAt + 1] << 8) | (data[crcAt + 2] << 16) | (data[crcAt + 3] << 24)) >>> 0;
+      if (crc32(body) !== crc) {
+        off += 1;
+        continue;
+      }
+      if (type === LOG_NAME_TYPE && len >= 2) {
+        const nameLen = data[off + LOG_HEADER + 1];
+        if (nameLen > 0 && nameLen <= LOG_NAME_MAX && 2 + nameLen <= len) {
+          let text = "";
+          let ok = true;
+          for (let i = 0; i < nameLen; i++) {
+            const c = data[off + LOG_HEADER + 2 + i];
+            if (!nameChar(c)) {
+              ok = false;
+              break;
+            }
+            text += String.fromCharCode(c);
+          }
+          if (ok) found = text;
+        }
+      }
+      off += frame;
+    }
+    return found;
+  }
+
+  function fileName(logId, bytes) {
+    const named = bytes ? nameInLog(bytes) : "";
+    if (named) return named + ".bin";
+    let hex = (logId >>> 0).toString(16);
+    while (hex.length < 8) hex = "0" + hex;
+    return "htg4-log-" + hex + ".bin";
+  }
+
+  function saveFile(name, bytes) {
+    const blob = new Blob([bytes], { type: "application/octet-stream" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function bind(ids) {
+    const $ = function (id) { return document.getElementById(id); };
+    const button = $(ids.button);
+    const save = $(ids.save);
+    const status = $(ids.status);
+    const error = $(ids.error);
+    let receiver = null;
+    let logId = 0;
+    let device = null;
+
+    function setStatus(text, ok) {
+      status.textContent = text;
+      status.className = ok === true ? "ok" : ok === false ? "bad" : "";
+    }
+
+    function progress() {
+      if (!receiver) return "idle";
+      const span = receiver.corrupt || receiver.truncated ? " (log contains a damaged record)" : "";
+      if (receiver.done) return receiver.offset + " bytes" + span;
+      return receiver.offset + " / " + receiver.sizeBytes + span;
+    }
+
+    async function onChunk(event) {
+      const parsed = parseChunk(event.target.value);
+      const result = receiver.accept(parsed);
+      if (!result.ok) {
+        error.textContent = "chunk " + result.reason + " at " + receiver.offset + "; resume to retry";
+        if (device && device.gatt && device.gatt.connected && parsed.offset !== undefined) {
+          try {
+            const control = await device.gatt.getPrimaryService(SERVICE).then(function (svc) {
+              return svc.getCharacteristic(CONTROL);
+            });
+            await control.writeValue(encodeControl(OPCODE_RESUME, logId, receiver.offset));
+          } catch (e) {
+            error.textContent = "chunk " + result.reason + "; resume write failed: " + e;
+          }
+        }
+        return;
+      }
+      error.textContent = "";
+      setStatus(progress(), true);
+      if (receiver.done) setStatus("complete, " + progress(), true);
+    }
+
+    async function connect() {
+      if (!navigator.bluetooth) {
+        setStatus("no Web Bluetooth (need Chrome, HTTPS)", false);
+        return;
+      }
+      setStatus("picker...");
+      try {
+        device = await navigator.bluetooth.requestDevice({
+          filters: [{ name: DEVICE_NAME }],
+          optionalServices: [SERVICE],
+        });
+        const server = await device.gatt.connect();
+        const svc = await server.getPrimaryService(SERVICE);
+        const statusChr = await svc.getCharacteristic(STATUS);
+        const control = await svc.getCharacteristic(CONTROL);
+        const data = await svc.getCharacteristic(DATA);
+        const snap = parseStatus(await statusChr.readValue());
+        if (snap.err) {
+          setStatus(snap.err, false);
+          return;
+        }
+        if (snap.version !== VERSION) {
+          setStatus("status version " + snap.version, false);
+          return;
+        }
+        const refused = denyText(snap.deny);
+        if (refused) {
+          setStatus(refused, false);
+          return;
+        }
+        if (snap.chunkPayload !== PAYLOAD) {
+          setStatus("chunk " + snap.chunkPayload + " bytes, page expects " + PAYLOAD, false);
+          return;
+        }
+        if (!receiver || receiver.logId !== snap.logId) {
+          receiver = new Receiver(snap.sizeBytes);
+          receiver.logId = snap.logId;
+          logId = snap.logId;
+        }
+        data.removeEventListener("characteristicvaluechanged", onChunk);
+        data.addEventListener("characteristicvaluechanged", onChunk);
+        await data.startNotifications();
+        await control.writeValue(encodeControl(OPCODE_RESUME, logId, receiver.offset));
+        device.addEventListener("gattserverdisconnected", function () {
+          setStatus("disconnected, " + progress(), false);
+          button.textContent = "Resume XIAO-LOG";
+        });
+        button.textContent = "Resume XIAO-LOG";
+        setStatus(receiver.done ? "complete, " + progress() : "downloading, " + progress(), true);
+      } catch (e) {
+        setStatus(String(e), false);
+      }
+    }
+
+    button.addEventListener("click", connect);
+    save.addEventListener("click", function () {
+      if (!receiver) {
+        error.textContent = "no log yet";
+        return;
+      }
+      saveFile(fileName(logId, receiver.bytes()), receiver.bytes());
+    });
+  }
+
+  const LogDownload = {
+    DEVICE_NAME: DEVICE_NAME,
+    SERVICE: SERVICE,
+    STATUS: STATUS,
+    CONTROL: CONTROL,
+    DATA: DATA,
+    PAYLOAD: PAYLOAD,
+    MTU: MTU,
+    VERSION: VERSION,
+    OPCODE_RESUME: OPCODE_RESUME,
+    OPCODE_ABORT: OPCODE_ABORT,
+    FLAG_LAST: FLAG_LAST,
+    FLAG_CORRUPT: FLAG_CORRUPT,
+    FLAG_TRUNCATED: FLAG_TRUNCATED,
+    DENY_ARMED: DENY_ARMED,
+    DENY_GROUND: DENY_GROUND,
+    crc32: crc32,
+    parseStatus: parseStatus,
+    parseChunk: parseChunk,
+    encodeControl: encodeControl,
+    encodeChunk: encodeChunk,
+    denyText: denyText,
+    Receiver: Receiver,
+    nameInLog: nameInLog,
+    fileName: fileName,
+    bind: bind,
+  };
+  if (typeof module !== "undefined" && module.exports) module.exports = LogDownload;
+  if (typeof globalThis !== "undefined") globalThis.LogDownload = LogDownload;
+})();

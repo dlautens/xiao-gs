@@ -11,7 +11,8 @@
     .ok { color: #0a0; }
     .bad { color: #a00; font-weight: bold; }
     .warn { color: #b60; }
-    button { font-size: 1rem; padding: .4rem .8rem; }
+    button { font-size: 1rem; padding: .4rem .8rem; margin: .2rem .2rem 0 0; }
+    #flight-state { font-size: 1.4rem; font-weight: bold; }
     #pin a { display: inline-block; margin: .4rem .6rem 0 0; font-size: 1.15rem; }
   </style>
 </head>
@@ -29,15 +30,42 @@
   <h2>Packet</h2>
   <table id="pkt"><tr><td>no packet</td></tr></table>
   <p id="err" class="bad"></p>
-  <!-- Generated codec (proto/gen/htg4_msg.js) and the envelope parser, served beside this page. -->
+  <h2>Flight</h2>
+  <p id="flight-state">armed</p>
+  <p id="flight-detail"></p>
+  <p>
+    <button id="ack" type="button">Ack warns</button>
+    <button id="arm" type="button">Arm</button>
+    <button id="disarm" type="button">Disarm</button>
+    <button id="sim-on" type="button">Sim on</button>
+    <button id="sim-off" type="button">Sim off</button>
+    <button id="boost" type="button">Sim boost</button>
+    <button id="wake" type="button">Wake BLE</button>
+  </p>
+  <h2>Flight log</h2>
+  <p>Separate radio from XIAO-GS. The XIAO flight computer (XIAO-LOG), disarmed and on the ground.</p>
+  <p>
+    <button id="log-btn" type="button">Download from XIAO-LOG</button>
+    <button id="log-save" type="button">Save file</button>
+    <span id="log-st">idle</span>
+  </p>
+  <p id="log-err" class="bad"></p>
+  <!-- Generated codec (proto/gen/htg4_msg.js) and the envelope parser, served beside this page.
+       log_download.js is the XIAO log transfer. It does not share the XIAO-GS connection. -->
   <script src="htg4_msg.js"></script>
   <script src="gs_envelope.js"></script>
+  <script src="flight_cmd.js"></script>
+  <script src="log_download.js"></script>
 <script>
 (function () {
   "use strict";
   /* Same UUIDs as firmware/apps/gs/main/gs_ble.hpp (and xiao-tracker ui_ble.h). */
   const SVC = "8aa1a001-c0de-4b1e-9a11-58414f2d4753";
   const DOWN = "8aa1a002-c0de-4b1e-9a11-58414f2d4753";
+  const UP = "8aa1a003-c0de-4b1e-9a11-58414f2d4753";
+  let upChar = null;
+  let pending = null;
+  let holdArmed = false;
   const WIRE = HTG4Msg.TABLE.wire.find(function (l) { return l.name === "lora_packet"; });
   const loss = new GsEnvelope.LossCounter();
   const repeats = new GsEnvelope.RepeatFilter();
@@ -87,11 +115,14 @@
       ["RSSI", env.rssiDbm + " dBm"],
       ["SNR", env.snrDb.toFixed(2) + " dB"],
       ["received", String(env.rxOk)],
-      ["CRC errors", String(env.rxCrcErr), env.rxCrcErr ? "warn" : ""],
+      ["RX errors (CRC/header)", String(env.rxErr), env.rxErr ? "warn" : ""],
       ["rejected (format/version, A21-4)", String(env.rxRejected), env.rxRejected ? "bad" : ""],
       ["loss (seq gaps)", loss.missed + " (" + loss.percent().toFixed(1) + " %)", loss.missed ? "warn" : ""],
     ]);
-    if (!fresh) return; // keepalive repeat: link rows updated above, packet view unchanged
+    if (!fresh) {
+      if (stale) showFlight(null, false);
+      return; // keepalive repeat: link rows updated above, packet view unchanged
+    }
     let p;
     try {
       p = HTG4Msg.decodeWire("lora_packet", env.packet);
@@ -109,7 +140,7 @@
     const set = HTG4Msg.bitNames(flags, p.flags);
     const faults = HTG4Msg.bitNames(health, p.health);
     const msgs = [];
-    if (set.indexOf("guide_stale") >= 0) msgs.push("GUIDE STALE (age " + (p.guide_age_ds / 10).toFixed(1) + " s)");
+    if (set.indexOf("guide_stale") >= 0) msgs.push("GUIDE STALE (field " + p.guide_age_ds + ")");
     if (set.indexOf("gps_valid") < 0) msgs.push("no current GPS fix");
     if (faults.length) msgs.push("faults: " + faults.join(", "));
     $("flags").className = msgs.length ? "bad" : "ok";
@@ -124,6 +155,51 @@
     } else {
       $("pin").textContent = "no fix seen yet, no pin";
     }
+    showFlight(p, true);
+  }
+
+  function showFlight(p, fresh) {
+    const phase = fresh && p ? p.phase : null;
+    const flags = fresh && p ? p.flags : 0;
+    if (fresh && p && (flags & FlightCmd.FLAG.guide_stale)) FlightCmd.noteEcho(p.guide_age_ds, true);
+    if (fresh && p) holdArmed = p.phase === FlightCmd.PHASE.armed_pad;
+    if (fresh && p && pending && FlightCmd.commandSettled(pending.name, phase, flags)) pending = null;
+    $("flight-state").textContent = FlightCmd.flightLabel({
+      pending: pending ? pending.name : null, fresh: fresh, phase: phase,
+    });
+    const names = [];
+    if (fresh && p) {
+      const field = WIRE.fields.find(function (f) { return f.name === "flags"; });
+      HTG4Msg.bitNames(field, flags).forEach(function (n) {
+        if (n.indexOf("cmd_") === 0 || n === "sim" || n === "ble_on") names.push(n);
+      });
+    }
+    $("flight-detail").textContent = "counter " + FlightCmd.loadCounter() +
+      (names.length ? "  " + names.join(" ") : "");
+  }
+
+  async function writeUp(bytes) {
+    if (!upChar) return;
+    if (upChar.writeValueWithoutResponse) await upChar.writeValueWithoutResponse(bytes);
+    else await upChar.writeValue(bytes);
+  }
+
+  async function send(name, wake) {
+    if (!upChar) {
+      $("flight-detail").textContent = "connect XIAO-GS first";
+      return;
+    }
+    const counter = FlightCmd.takeCounter();
+    const bytes = FlightCmd.encodeCommand(name, counter, wake || 0, HTG4Msg);
+    pending = { name: name, bytes: bytes };
+    if (name === "arm") $("flight-state").textContent = "armed (unconfirmed)";
+    try { await writeUp(bytes); } catch (e) { $("err").textContent = String(e.message || e); }
+  }
+
+  async function sendHold() {
+    if (!upChar || pending || !holdArmed) return;
+    const counter = FlightCmd.takeCounter();
+    try { await writeUp(FlightCmd.encodeCommand("hold", counter, 0, HTG4Msg)); } catch (e) { /* next period */ }
   }
 
   function onValue(ev) {
@@ -131,35 +207,86 @@
     if (val) render(GsEnvelope.parse(val));
   }
 
+  // HIL only: the runner serves this page on 127.0.0.1 with ?hil=1 and has already
+  // granted one device. getDevices() does not open the chooser. Any other host,
+  // including the public page, keeps requestDevice() below.
+  function hilTestMode() {
+    const host = location.hostname;
+    if (host !== "127.0.0.1" && host !== "localhost") return false;
+    return new URLSearchParams(location.search).get("hil") === "1";
+  }
+
+  async function subscribe(dev) {
+    setSt("connecting " + (dev.name || ""), true);
+    const server = await dev.gatt.connect();
+    const svc = await server.getPrimaryService(SVC);
+    const down = await svc.getCharacteristic(DOWN);
+    upChar = await svc.getCharacteristic(UP);
+    await down.startNotifications();
+    down.addEventListener("characteristicvaluechanged", onValue);
+    try {
+      render(GsEnvelope.parse(await down.readValue()));
+    } catch (e) { /* the notify path is enough */ }
+    dev.addEventListener("gattserverdisconnected", function () {
+      upChar = null;
+      setSt("disconnected", false);
+    });
+    setSt("subscribed", true);
+  }
+
   async function connect() {
     if (!navigator.bluetooth) {
       setSt("no Web Bluetooth (need Chrome, HTTPS)", false);
       return;
     }
-    setSt("picker...");
     try {
+      if (hilTestMode()) {
+        const wanted = new URLSearchParams(location.search).get("ble_name") || "";
+        if (!wanted) {
+          setSt("test mode: no device name", false);
+          return;
+        }
+        if (typeof navigator.bluetooth.getDevices !== "function") {
+          setSt("test mode: no getDevices", false);
+          return;
+        }
+        setSt("test mode");
+        const devices = await navigator.bluetooth.getDevices();
+        const dev = devices.find(function (d) { return d.name === wanted; });
+        if (!dev) {
+          setSt("test mode: " + wanted + " is not granted", false);
+          return;
+        }
+        await subscribe(dev);
+        return;
+      }
+      setSt("picker...");
       const dev = await navigator.bluetooth.requestDevice({
         filters: [{ name: "XIAO-GS" }, { services: [SVC] }],
         optionalServices: [SVC],
       });
-      setSt("connecting " + (dev.name || ""), true);
-      const server = await dev.gatt.connect();
-      const svc = await server.getPrimaryService(SVC);
-      const down = await svc.getCharacteristic(DOWN);
-      await down.startNotifications();
-      down.addEventListener("characteristicvaluechanged", onValue);
-      try {
-        render(GsEnvelope.parse(await down.readValue()));
-      } catch (e) { /* the notify path is enough */ }
-      dev.addEventListener("gattserverdisconnected", function () { setSt("disconnected", false); });
-      setSt("subscribed", true);
+      await subscribe(dev);
     } catch (e) {
       setSt(String(e), false);
     }
   }
 
   $("btn").addEventListener("click", connect);
+  $("ack").addEventListener("click", function () { send("ack", 0); });
+  $("arm").addEventListener("click", function () { send("arm", 0); });
+  $("disarm").addEventListener("click", function () { send("disarm", 0); });
+  $("sim-on").addEventListener("click", function () { send("sim_set", 0); });
+  $("sim-off").addEventListener("click", function () { send("sim_clear", 0); });
+  $("boost").addEventListener("click", function () { send("sim_boost", 0); });
+  $("wake").addEventListener("click", function () { send("ble_wake", FlightCmd.WAKE_BLE); });
+  let holdTicks = 0;
+  setInterval(function () {
+    holdTicks += 1;
+    if (pending) writeUp(pending.bytes).catch(function () {});
+    else if (holdTicks % 20 === 0) sendHold();
+  }, 1000);
 })();
+LogDownload.bind({ button: "log-btn", save: "log-save", status: "log-st", error: "log-err" });
 </script>
 </body>
 </html>
