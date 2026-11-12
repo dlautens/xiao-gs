@@ -28,6 +28,18 @@
     unlock_refused: 1 << 15,
   };
   const WAKE_BLE = 1;
+  /* Same cutoff as GsEnvelope.STALE_AFTER_S: the pad downlink is 5 s, and a packet older than two periods is stale. */
+  const STALE_AFTER_S = 10;
+  const PENDING_TEXT = {
+    arm: "arm commanded",
+    disarm: "disarm commanded",
+    sim_set: "sim on commanded",
+    sim_clear: "sim off commanded",
+    sim_boost: "sim boost commanded",
+    ble_wake: "wake commanded",
+    hold: "hold commanded",
+    ack: "ack commanded",
+  };
   let memoryCounter = 0;
 
   function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
@@ -189,15 +201,17 @@
 
   /* Settle only when cmd_echo matches this command's counter. A fresh safe report
    * does not clear a pending arm. A disarm is dropped when the phase is already
-   * pad safe, the same exception the Heltec relay uses before it transmits. */
-  function afterDownlink(pendingName, phase, flags, fresh, echo, counter) {
+   * pad safe, the same exception the Heltec relay uses before it transmits.
+   * fresh means this notify is a new packet. A keepalive repeat passes fresh false
+   * and the last decoded phase, so the label keeps that phase and the bracket. */
+  function afterDownlink(pendingName, phase, flags, fresh, echo, counter, ageS) {
     let name = pendingName || null;
     const match = echoMatches(echo, counter);
     if (fresh && name === "disarm" && phase === PHASE.safe) name = null;
     else if (fresh && name && match && commandSettled(name, phase, flags)) name = null;
     return {
       pending: name,
-      label: flightLabel({ pending: name, fresh: fresh === true, phase: fresh ? phase : null }),
+      label: flightLabel({ pending: name, phase: phase, ageS: ageS }),
     };
   }
 
@@ -223,24 +237,32 @@
     return refused;
   }
 
-  /* pending "arm" stays "armed (unconfirmed)" until a fresh armed/flight report.
-   * A missing or stale packet is "armed". "safe" only from a fresh safe report. */
+  /* The state word is the latest decoded phase. No packet yet is the only text before that.
+   * A pending command is a bracket and never replaces the state. "armed" is only PHASE.armed_pad. */
+  function phaseText(phase) {
+    if (phase == null) return "no packet yet";
+    if (phase === PHASE.safe) return "safe";
+    if (phase === PHASE.armed_pad) return "armed";
+    if (phase === PHASE.boost) return "flight";
+    if (phase === PHASE.descent_drogue) return "descent";
+    if (phase === PHASE.landed) return "recovery";
+    return "phase " + phase;
+  }
+
   function flightLabel(view) {
-    const fresh = view.fresh === true && view.phase != null;
-    const moved = fresh && (view.phase === PHASE.armed_pad || view.phase === PHASE.boost ||
-      view.phase === PHASE.descent_drogue || view.phase === PHASE.landed);
-    if (view.pending === "arm" && !moved) return "armed (unconfirmed)";
-    if (!fresh) return "armed";
-    if (view.phase === PHASE.armed_pad) return "armed (confirmed)";
-    if (view.phase === PHASE.safe) return "safe";
-    if (view.phase === PHASE.boost) return "flight";
-    if (view.phase === PHASE.descent_drogue) return "descent";
-    if (view.phase === PHASE.landed) return "recovery";
-    return "armed";
+    let text = phaseText(view.phase);
+    const age = view.ageS;
+    if (view.phase != null && typeof age === "number" && age > STALE_AFTER_S) {
+      text += ", last known " + Math.round(age) + " s ago";
+    }
+    if (view.pending) {
+      text += " (" + (PENDING_TEXT[view.pending] || (view.pending + " commanded")) + ")";
+    }
+    return text;
   }
 
   return {
-    KEY: KEY, CMD: CMD, PHASE: PHASE, FLAG: FLAG, WAKE_BLE: WAKE_BLE,
+    KEY: KEY, CMD: CMD, PHASE: PHASE, FLAG: FLAG, WAKE_BLE: WAKE_BLE, STALE_AFTER_S: STALE_AFTER_S,
     sha256: sha256, macOf: macOf, loadCounter: loadCounter, saveCounter: saveCounter,
     noteEcho: noteEcho, uplinkCounter: uplinkCounter, echoMatches: echoMatches,
     takeCounter: takeCounter, encodeCommand: encodeCommand,

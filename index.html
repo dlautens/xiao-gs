@@ -13,11 +13,15 @@
     .warn { color: #b60; }
     button { font-size: 1rem; padding: .4rem .8rem; margin: .2rem .2rem 0 0; }
     #flight-state { font-size: 1.4rem; font-weight: bold; }
+    #builds { font-family: monospace; }
     #pin a { display: inline-block; margin: .4rem .6rem 0 0; font-size: 1.15rem; }
   </style>
 </head>
 <body>
   <h1>HT-G4 ground station</h1>
+  <!-- The span starts as the unmirrored marker. tools/gs-web-mirror.sh writes the ht-g4 commit there.
+       board fills from the Heltec Device Information firmware revision when that image serves it. -->
+  <p id="builds"><span id="page-stamp">page b5d051c</span> · <span id="board-build">board (none)</span></p>
   <p>Chrome on Android over HTTPS. Web Bluetooth to the Heltec ground station (XIAO-GS).</p>
   <p>
     <button id="btn" type="button">Connect XIAO-GS</button>
@@ -31,7 +35,7 @@
   <table id="pkt"><tr><td>no packet</td></tr></table>
   <p id="err" class="bad"></p>
   <h2>Flight</h2>
-  <p id="flight-state">armed</p>
+  <p id="flight-state">no packet yet</p>
   <p id="flight-detail"></p>
   <p>
     <button id="ack" type="button">Ack warns</button>
@@ -52,10 +56,10 @@
   <p id="log-err" class="bad"></p>
   <!-- Generated codec (proto/gen/htg4_msg.js) and the envelope parser, served beside this page.
        log_download.js is the XIAO log transfer. It does not share the XIAO-GS connection. -->
-  <script src="htg4_msg.js"></script>
-  <script src="gs_envelope.js"></script>
-  <script src="flight_cmd.js"></script>
-  <script src="log_download.js"></script>
+  <script src="htg4_msg.js?v=b5d051c"></script>
+  <script src="gs_envelope.js?v=b5d051c"></script>
+  <script src="flight_cmd.js?v=b5d051c"></script>
+  <script src="log_download.js?v=b5d051c"></script>
 <script>
 (function () {
   "use strict";
@@ -63,6 +67,8 @@
   const SVC = "8aa1a001-c0de-4b1e-9a11-58414f2d4753";
   const DOWN = "8aa1a002-c0de-4b1e-9a11-58414f2d4753";
   const UP = "8aa1a003-c0de-4b1e-9a11-58414f2d4753";
+  const DIS = "0000180a-0000-1000-8000-00805f9b34fb";
+  const FW_REV = "00002a26-0000-1000-8000-00805f9b34fb";
   let upChar = null;
   let holdArmed = false;
   const PENDING_KEY = "htg4.flight.pending";
@@ -86,12 +92,35 @@
   /* A reload or a BLE reconnect that reloads the page used to drop this and paint "safe"
    * from the next beacon, while the Heltec still had the uplink queued. */
   let pending = loadPending();
+  let lastPhase = null;
+  let lastAgeS = null;
   const WIRE = HTG4Msg.TABLE.wire.find(function (l) { return l.name === "lora_packet"; });
   const loss = new GsEnvelope.LossCounter();
   const repeats = new GsEnvelope.RepeatFilter();
   const $ = function (id) { return document.getElementById(id); };
   if (pending) {
-    $("flight-state").textContent = FlightCmd.flightLabel({ pending: pending.name, fresh: false, phase: null });
+    $("flight-state").textContent = FlightCmd.flightLabel({ pending: pending.name, phase: null });
+  }
+
+  function noteBoard(text) {
+    $("board-build").textContent = text;
+    const page = ($("page-stamp").textContent || "").replace(/^page\s+/, "");
+    const board = text.replace(/^board\s+/, "").replace(/-dirty$/, "");
+    const hex = /^[0-9a-f]+$/;
+    const mismatch = hex.test(page) && hex.test(board) && page !== board &&
+      !board.startsWith(page) && !page.startsWith(board);
+    $("builds").className = mismatch ? "bad" : "";
+  }
+
+  async function readBoardBuild(server) {
+    try {
+      const dis = await server.getPrimaryService(DIS);
+      const chr = await dis.getCharacteristic(FW_REV);
+      const text = new TextDecoder().decode(await chr.readValue()).replace(/\0/g, "").trim();
+      noteBoard(text ? "board " + text : "board (none)");
+    } catch (e) {
+      noteBoard("board (none)");
+    }
   }
 
   function setSt(t, ok) {
@@ -143,8 +172,8 @@
       ["loss (seq gaps)", loss.missed + " (" + loss.percent().toFixed(1) + " %)", loss.missed ? "warn" : ""],
     ]);
     if (!fresh) {
-      if (stale) showFlight(null, false);
-      return; // keepalive repeat: link rows updated above, packet view unchanged
+      showFlight(null, false, env.ageS); // keepalive: age moves, the last decoded phase stays
+      return;
     }
     let p;
     try {
@@ -178,26 +207,34 @@
     } else {
       $("pin").textContent = "no fix seen yet, no pin";
     }
-    showFlight(p, true);
+    showFlight(p, true, env.ageS);
   }
 
-  function showFlight(p, fresh) {
-    const phase = fresh && p ? p.phase : null;
-    const flags = fresh && p ? p.flags : 0;
-    if (fresh && p && (flags & FlightCmd.FLAG.guide_stale)) FlightCmd.noteEcho(p.guide_age_ds, true);
-    if (fresh && p) holdArmed = p.phase === FlightCmd.PHASE.armed_pad;
-    const echo = fresh && p ? p.cmd_echo : null;
+  function showFlight(p, isNew, ageS) {
+    if (typeof ageS === "number") lastAgeS = ageS;
+    if (isNew && p) lastPhase = p.phase;
+    const phase = lastPhase;
+    const flags = isNew && p ? p.flags : 0;
+    if (isNew && p && (flags & FlightCmd.FLAG.guide_stale)) FlightCmd.noteEcho(p.guide_age_ds, true);
+    if (isNew && p) holdArmed = p.phase === FlightCmd.PHASE.armed_pad;
+    const echo = isNew && p ? p.cmd_echo : null;
     const ctr = pending ? FlightCmd.uplinkCounter(pending.bytes) : null;
     const matched = FlightCmd.echoMatches(echo, ctr);
     const had = !!pending;
-    const step = FlightCmd.afterDownlink(pending ? pending.name : null, phase, flags, fresh && !!p, echo, ctr);
+    if (!isNew || !p) {
+      $("flight-state").textContent = FlightCmd.flightLabel({
+        pending: pending ? pending.name : null, phase: phase, ageS: lastAgeS,
+      });
+      return;
+    }
+    const step = FlightCmd.afterDownlink(pending ? pending.name : null, phase, flags, true, echo, ctr, lastAgeS);
     if (pending && step.pending == null) {
       pending = null;
       storePending(null);
     }
     $("flight-state").textContent = step.label;
     const names = [];
-    if (fresh && p) {
+    if (isNew && p) {
       if (!had || matched) {
         const status = FlightCmd.commandStatus(flags);
         if (status) names.push(status);
@@ -225,7 +262,7 @@
     pending = { name: name, bytes: bytes };
     storePending(pending);
     $("flight-state").textContent = FlightCmd.flightLabel({
-      pending: name, fresh: false, phase: null,
+      pending: name, phase: lastPhase, ageS: lastAgeS,
     });
     try { await writeUp(bytes); } catch (e) { $("err").textContent = String(e.message || e); }
   }
@@ -256,6 +293,7 @@
     const svc = await server.getPrimaryService(SVC);
     const down = await svc.getCharacteristic(DOWN);
     upChar = await svc.getCharacteristic(UP);
+    await readBoardBuild(server);
     await down.startNotifications();
     down.addEventListener("characteristicvaluechanged", onValue);
     try {
@@ -297,7 +335,7 @@
       setSt("picker...");
       const dev = await navigator.bluetooth.requestDevice({
         filters: [{ name: "XIAO-GS" }, { services: [SVC] }],
-        optionalServices: [SVC],
+        optionalServices: [SVC, DIS],
       });
       await subscribe(dev);
     } catch (e) {
