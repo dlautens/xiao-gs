@@ -4,283 +4,240 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HT-G4 ground station</title>
+  <!-- The phone page (DECISIONS HG-242): a viewer. Used outdoors on an Android phone in Chrome,
+       often one-handed, so type is large, tap targets are at least 48 px, and every colour also
+       carries a word or an icon. Self-contained: it loads only the three scripts beside it. -->
   <style>
-    body { font-family: sans-serif; margin: 1rem; max-width: 40rem; }
-    table { border-collapse: collapse; width: 100%; }
-    td { padding: .15rem .4rem; border-bottom: 1px solid #ddd; font-family: monospace; }
-    .ok { color: #0a0; }
-    .bad { color: #a00; font-weight: bold; }
-    .warn { color: #b60; }
-    button { font-size: 1rem; padding: .4rem .8rem; margin: .2rem .2rem 0 0; }
-    #flight-state { font-size: 1.4rem; font-weight: bold; }
-    #builds { font-family: monospace; }
-    #pin a { display: inline-block; margin: .4rem .6rem 0 0; font-size: 1.15rem; }
+    :root {
+      --ground: #ebe8e1; --card: #fff; --ink: #16181d; --dim: #4a4d55; --line: #ebe8e1;
+      --safe: #0b5d1e; --armed: #a8001c; --flight: #0b3d91; --idle: #3a3d45; --amber: #8a4b00;
+      --sim: #4c1d95; --bench: #ff8a00; --ematch: #ffd400;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    [hidden] { display: none !important; }
+    html { -webkit-text-size-adjust: 100%; }
+    body { background: var(--ground); color: var(--ink); font: 17px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+      padding-bottom: 76px; overflow-wrap: anywhere; }
+    .ic { width: 1.15em; height: 1.15em; flex: none; vertical-align: -.18em; margin-right: .35em; }
+    #top { position: sticky; top: 0; z-index: 2; background: var(--ground); padding-bottom: 2px; }
+    .pin { color: #fff; padding: 10px 16px 12px; border-radius: 0 0 18px 18px; }
+    .t-safe, .t-landed { background: var(--safe); } .t-armed, .t-fault { background: var(--armed); }
+    .t-flight { background: var(--flight); } .t-idle, .pin.stale { background: var(--idle); }
+    .state { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 10px; }
+    .state .ic { width: 30px; height: 30px; align-self: center; margin: 0; }
+    .word { font-size: 38px; font-weight: 800; letter-spacing: .02em; line-height: 1.05; }
+    .sub { font-size: 18px; font-weight: 600; }
+    .lastknown { font-size: 18px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+    .linkline { display: flex; margin-top: 6px; font-weight: 600; }
+    .linkline .ic { margin-top: .08em; }
+    #btn { display: block; width: calc(100% - 32px); margin: 8px 16px 0; }
+    .banner { margin: 8px 16px 0; padding: 6px 8px; border-radius: 12px; text-align: center; font-weight: 900; line-height: 1.15; }
+    .b-sim { background: var(--sim); color: #fff; font-size: 34px; letter-spacing: .3em; text-indent: .3em; }
+    .b-bench { background: var(--bench); color: #000; font-size: 24px; letter-spacing: .04em; border: 4px solid #000; }
+    .b-fault { background: var(--armed); color: #fff; font-size: 20px; text-align: left; padding: 8px 12px; }
+    .b-fault .what { display: flex; align-items: center; }
+    .b-fault .ic { width: 30px; height: 30px; }
+    .b-fault .reason { font-size: 18px; font-weight: 700; margin: 2px 0 0 40px; }
+    .b-ematch { background: var(--ematch); color: #000; font-size: 22px; border: 8px solid;
+      border-image: repeating-linear-gradient(135deg, #000 0 10px, var(--ematch) 10px 20px) 8; border-radius: 0; }
+    main { padding: 0 16px 8px; }
+    .view { display: none; } .view.on { display: block; }
+    h2 { font-size: 14px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin: 14px 4px 6px; font-weight: 700; }
+    .count { display: inline-block; min-width: 1.6em; text-align: center; border-radius: 1em; padding: 0 .4em; margin-left: .3em; background: var(--ink); color: #fff; }
+    .card { background: var(--card); border-radius: 12px; overflow: hidden; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--line); align-items: baseline; }
+    .row:last-child { border-bottom: 0; }
+    .row .k { color: var(--dim); flex: 0 1 auto; } .row .v { font-weight: 650; text-align: right; flex: 1 1 0; min-width: 40%; }
+    .row .ic { color: var(--safe); } .row .v-warn .ic { color: var(--amber); } .row .v-stop .ic { color: var(--armed); }
+    .item { display: flex; align-items: center; gap: 6px; min-height: 56px; background: var(--card); border-radius: 12px;
+      padding: 4px 10px 4px 14px; margin-top: 6px; border-left: 8px solid var(--dim); }
+    .item .ic { width: 26px; height: 26px; margin-right: 4px; }
+    .item .name { flex: 1; font-size: 19px; font-weight: 700; }
+    .item.stop { border-color: var(--armed); color: var(--armed); }
+    .item.warn { border-color: var(--amber); } .item.warn .ic { color: var(--amber); }
+    .item.acked { border-color: var(--safe); color: var(--safe); }
+    .item.none { color: var(--dim); min-height: 48px; } .item.none .name { font-weight: 600; font-size: 17px; }
+    .tag { font-size: 15px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; text-align: right; }
+    button, a.btn { font: inherit; font-weight: 800; background: var(--ink); color: #fff; border: 0; border-radius: 28px;
+      min-height: 48px; min-width: 48px; padding: 0 20px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+    .ack { min-width: 92px; font-size: 18px; }
+    .big { display: flex; width: 100%; min-height: 60px; margin-top: 14px; font-size: 22px; }
+    .ready { display: flex; align-items: center; justify-content: center; gap: 4px; min-height: 56px; margin-top: 14px; padding: 6px 10px;
+      border-radius: 12px; font-size: 18px; font-weight: 900; letter-spacing: .02em; text-align: center; }
+    .ready .ic { width: 28px; height: 28px; }
+    .cmdline { display: flex; margin-top: 6px; padding: 6px 8px; border-radius: 10px; background: #fff; color: var(--ink); font-weight: 700; }
+    .cmdline .ic { margin-top: .08em; } .cmdline.c-holding .ic { color: var(--flight); } .cmdline.c-worked .ic { color: var(--safe); }
+    .cmdline.c-refused, .cmdline.c-no_reply { color: var(--armed); }
+    .cmdline .next { display: block; font-weight: 600; color: var(--ink); }
+    .confirm { flex-wrap: nowrap; } .confirm .big { margin-top: 6px; }
+    .big.arm { background: var(--armed); }
+    .opts { flex-direction: column; }
+    .opt { width: 100%; justify-content: flex-start; background: var(--card); color: var(--ink); border: 3px solid var(--ink); font-size: 18px; }
+    .opt.on { background: var(--ink); color: #fff; }
+    .ready.unknown { background: var(--idle); color: #fff; }
+    .ready.yes { background: var(--safe); color: #fff; } .ready.no { background: var(--armed); color: #fff; }
+    .big.refuse { background: var(--card); color: var(--ink); border: 3px solid var(--ink); font-size: 19px; }
+    .note { margin: 8px 4px 0; font-size: 15px; color: var(--dim); }
+    #log-st, #log-err { margin: 8px 4px 0; font-size: 15px; color: var(--dim); }
+    #log-st.ok { color: var(--safe); font-weight: 700; } #log-st.bad, #log-err { color: var(--armed); font-weight: 700; }
+    .links, .btns { display: flex; flex-wrap: wrap; gap: 8px; padding: 9px 14px; }
+    .btns { padding: 0; margin-top: 8px; }
+    #pkt .row { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; padding: 5px 14px; }
+    #tabs { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; display: flex; gap: 4px; padding: 6px 8px; background: var(--card);
+      border-top: 1px solid #cfcabf; }
+    #tabs button { flex: 1; background: none; color: var(--dim); padding: 0; font-weight: 700; border-radius: 24px; }
+    #tabs button.on { background: var(--ink); color: #fff; }
   </style>
 </head>
 <body>
-  <h1>HT-G4 ground station</h1>
-  <!-- The span starts as the unmirrored marker. tools/gs-web-mirror.sh writes the ht-g4 commit there.
-       board fills from the Heltec Device Information firmware revision when that image serves it. -->
-  <p id="builds"><span id="page-stamp">page b5d051c</span> · <span id="board-build">board (none)</span></p>
-  <p>Chrome on Android over HTTPS. Web Bluetooth to the Heltec ground station (XIAO-GS).</p>
-  <p>
-    <button id="btn" type="button">Connect XIAO-GS</button>
-    <span id="st">idle</span>
-  </p>
-  <div id="flags"></div>
-  <div id="pin">no position yet</div>
-  <h2>Link</h2>
-  <table id="link"></table>
-  <h2>Packet</h2>
-  <table id="pkt"><tr><td>no packet</td></tr></table>
-  <p id="err" class="bad"></p>
-  <h2>Flight</h2>
-  <p id="flight-state">no packet yet</p>
-  <p id="flight-detail"></p>
-  <p>
-    <button id="ack" type="button">Ack warns</button>
-    <button id="arm" type="button">Arm</button>
-    <button id="disarm" type="button">Disarm</button>
-    <button id="sim-on" type="button">Sim on</button>
-    <button id="sim-off" type="button">Sim off</button>
-    <button id="boost" type="button">Sim boost</button>
-    <button id="wake" type="button">Wake BLE</button>
-  </p>
-  <h2>Flight log</h2>
-  <p>Separate radio from XIAO-GS. The XIAO flight computer (XIAO-LOG), disarmed and on the ground.</p>
-  <p>
-    <button id="log-btn" type="button">Download from XIAO-LOG</button>
-    <button id="log-save" type="button">Save file</button>
-    <span id="log-st">idle</span>
-  </p>
-  <p id="log-err" class="bad"></p>
-  <!-- Generated codec (proto/gen/htg4_msg.js) and the envelope parser, served beside this page.
+  <div id="top">
+    <div id="r-head"></div>
+    <button id="btn" type="button">Connect ground station</button>
+    <div id="r-banners"></div>
+  </div>
+  <main>
+    <section class="view" id="v-pad">
+      <div id="r-padLink"></div>
+      <div id="r-padMain"></div>
+    </section>
+    <section class="view" id="v-flight"><div id="r-flight"></div></section>
+    <section class="view" id="v-bench">
+      <div id="r-bench"></div>
+      <h2>Flight log</h2>
+      <p class="note">A separate radio link to the XIAO flight computer (XIAO-LOG), disarmed and on the ground.</p>
+      <div class="btns">
+        <button id="log-btn" type="button">Download from XIAO-LOG</button>
+        <button id="log-save" type="button">Save file</button>
+      </div>
+      <p id="log-st">idle</p>
+      <p id="log-err"></p>
+      <h2>Packet fields</h2>
+      <div class="card" id="pkt"><div class="row"><span class="k">Packet</span><span class="v">no packet</span></div></div>
+    </section>
+    <section class="view" id="v-link">
+      <h2>Link details</h2>
+      <div class="card" id="link"></div>
+      <div id="r-err"></div>
+      <p class="note">Ground station Bluetooth: <span id="st">idle</span></p>
+      <p class="note">Chrome on Android over HTTPS. Web Bluetooth to the Heltec ground station (XIAO-GS).</p>
+    </section>
+  </main>
+  <nav id="tabs">
+    <button type="button" data-view="pad">Pad</button>
+    <button type="button" data-view="flight">Flight</button>
+    <button type="button" data-view="bench">Bench</button>
+    <button type="button" data-view="link">Link</button>
+  </nav>
+  <!-- Generated codec (proto/gen/htg4_msg.js) and the envelope parser and viewer, served beside this page.
        log_download.js is the XIAO log transfer. It does not share the XIAO-GS connection. -->
-  <script src="htg4_msg.js?v=b5d051c"></script>
-  <script src="gs_envelope.js?v=b5d051c"></script>
-  <script src="flight_cmd.js?v=b5d051c"></script>
-  <script src="log_download.js?v=b5d051c"></script>
+  <script src="htg4_msg.js"></script>
+  <script src="gs_envelope.js"></script>
+  <script src="log_download.js"></script>
 <script>
 (function () {
   "use strict";
   /* Same UUIDs as firmware/apps/gs/main/gs_ble.hpp (and xiao-tracker ui_ble.h). */
   const SVC = "8aa1a001-c0de-4b1e-9a11-58414f2d4753";
   const DOWN = "8aa1a002-c0de-4b1e-9a11-58414f2d4753";
-  const UP = "8aa1a003-c0de-4b1e-9a11-58414f2d4753";
-  const DIS = "0000180a-0000-1000-8000-00805f9b34fb";
-  const FW_REV = "00002a26-0000-1000-8000-00805f9b34fb";
-  let upChar = null;
-  let holdArmed = false;
-  const PENDING_KEY = "htg4.flight.pending";
-  function loadPending() {
-    try {
-      const raw = sessionStorage.getItem(PENDING_KEY);
-      if (!raw) return null;
-      const saved = JSON.parse(raw);
-      if (!saved || typeof saved.name !== "string" || !Array.isArray(saved.bytes)) return null;
-      return { name: saved.name, bytes: Uint8Array.from(saved.bytes) };
-    } catch (e) {
-      return null;
-    }
-  }
-  function storePending(value) {
-    try {
-      if (!value) sessionStorage.removeItem(PENDING_KEY);
-      else sessionStorage.setItem(PENDING_KEY, JSON.stringify({ name: value.name, bytes: Array.from(value.bytes) }));
-    } catch (e) { /* private mode keeps the in-memory copy only */ }
-  }
-  /* A reload or a BLE reconnect that reloads the page used to drop this and paint "safe"
-   * from the next beacon, while the Heltec still had the uplink queued. */
-  let pending = loadPending();
-  let lastPhase = null;
-  let lastAgeS = null;
-  const WIRE = HTG4Msg.TABLE.wire.find(function (l) { return l.name === "lora_packet"; });
-  const loss = new GsEnvelope.LossCounter();
-  const repeats = new GsEnvelope.RepeatFilter();
+  const UP = "8aa1a003-c0de-4b1e-9a11-58414f2d4753"; // command intents (apps/gs/README.md "Command contract")
   const $ = function (id) { return document.getElementById(id); };
-  if (pending) {
-    $("flight-state").textContent = FlightCmd.flightLabel({ pending: pending.name, phase: null });
+  let viewer = new GsEnvelope.Viewer(HTG4Msg);
+  let now = function () { return Date.now(); };
+  const REGION = { pkt: "pkt", link: "link" }; // the other regions are r-<name>
+  const shown = {};
+  let up = null; // the up characteristic while connected
+  let writing = Promise.resolve(); // one GATT write at a time
+
+  // Writes a region only when its text changed, so a button is not replaced under a finger.
+  function draw() {
+    const r = viewer.regions(now());
+    Object.keys(r).forEach(function (k) {
+      if (shown[k] === r[k]) return;
+      shown[k] = r[k];
+      $(REGION[k] || "r-" + k).innerHTML = r[k];
+    });
+    GsEnvelope.VIEWS.forEach(function (v) {
+      $("v-" + v).classList.toggle("on", v === viewer.view);
+    });
+    document.querySelectorAll("#tabs button").forEach(function (b) {
+      const on = b.dataset.view === viewer.view;
+      b.classList.toggle("on", on);
+      if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+    });
+    $("btn").hidden = viewer.ble === "connected" || viewer.ble === "connecting";
   }
 
-  function noteBoard(text) {
-    $("board-build").textContent = text;
-    const page = ($("page-stamp").textContent || "").replace(/^page\s+/, "");
-    const board = text.replace(/^board\s+/, "").replace(/-dirty$/, "");
-    const hex = /^[0-9a-f]+$/;
-    const mismatch = hex.test(page) && hex.test(board) && page !== board &&
-      !board.startsWith(page) && !page.startsWith(board);
-    $("builds").className = mismatch ? "bad" : "";
+  function feed(env) {
+    viewer.onEnvelope(env, now());
+    draw();
   }
 
-  async function readBoardBuild(server) {
-    try {
-      const dis = await server.getPrimaryService(DIS);
-      const chr = await dis.getCharacteristic(FW_REV);
-      const text = new TextDecoder().decode(await chr.readValue()).replace(/\0/g, "").trim();
-      noteBoard(text ? "board " + text : "board (none)");
-    } catch (e) {
-      noteBoard("board (none)");
-    }
-  }
-
-  function setSt(t, ok) {
+  function setSt(t, ble) {
     $("st").textContent = t;
-    $("st").className = ok === true ? "ok" : ok === false ? "bad" : "";
+    if (ble) viewer.setBle(ble);
+    draw();
   }
 
-  function rows(el, list) {
-    el.innerHTML = "";
-    list.forEach(function (r) {
-      const tr = document.createElement("tr");
-      const a = document.createElement("td");
-      const b = document.createElement("td");
-      a.textContent = r[0];
-      b.textContent = r[1];
-      if (r[2]) b.className = r[2];
-      tr.appendChild(a);
-      tr.appendChild(b);
-      el.appendChild(tr);
+  // The selected view is the page's own state, kept in the address (#flight) so a reload keeps
+  // it. Only a tab tap changes it.
+  $("tabs").addEventListener("click", function (ev) {
+    const b = ev.target.closest("button[data-view]");
+    if (!b) return;
+    viewer.selectView(b.dataset.view);
+    history.replaceState(null, "", "#" + viewer.view);
+    window.scrollTo(0, 0);
+    draw();
+  });
+  viewer.selectView(location.hash.slice(1));
+
+  // The page's own byte for a tap (1-255). The relay echoes it, so the page knows its own tap.
+  function tapByte() {
+    const b = new Uint8Array(1);
+    do { crypto.getRandomValues(b); } while (b[0] === 0);
+    return b[0];
+  }
+
+  // Writes one intent on the up characteristic. The relay holds it, signs it and retries it; the
+  // page does not re-send (HG-241). done(err) gets "" when the ground station took the write.
+  function send(intent, done) {
+    if (!up || viewer.ble !== "connected") {
+      done("phone not connected to the ground station");
+      return;
+    }
+    const ch = up;
+    const bytes = GsEnvelope.encodeIntent(HTG4Msg, intent);
+    writing = writing.then(function () {
+      return (ch.writeValueWithResponse ? ch.writeValueWithResponse(bytes) : ch.writeValue(bytes));
+    }).then(function () { done(""); }, function (e) { done(String(e.message || e)); });
+  }
+
+  // A tap on a page button: one intent, or a change to what the page shows (the Arm confirm step,
+  // a find option).
+  document.addEventListener("click", function (ev) {
+    const b = ev.target.closest("button[data-press]");
+    if (!b) return;
+    const intent = viewer.press(b.dataset.press, b.dataset.arg, new Date().toLocaleTimeString(), tapByte());
+    draw();
+    if (!intent) return;
+    send(intent, function (err) {
+      viewer.sent(err);
+      draw();
     });
-  }
+  });
 
-  function fieldText(f, v) {
-    if (f.bits) {
-      const names = HTG4Msg.bitNames(f, v);
-      return "0x" + Number(v).toString(16) + (names.length ? " [" + names.join(", ") + "]" : "");
-    }
-    if (f.enum) return String(HTG4Msg.enumName(f, v) || v);
-    const unit = f.unit && f.unit !== "1" ? " " + f.unit : "";
-    return (typeof v === "number" && !Number.isInteger(v) ? v.toFixed(2) : String(v)) + unit;
-  }
-
-  function render(env) {
-    $("err").textContent = "";
-    if (env.err) {
-      if (!env.skip) $("err").textContent = env.err;
-      return;
-    }
-    const stale = env.ageS === null || env.ageS > GsEnvelope.STALE_AFTER_S;
-    const fresh = repeats.isNew(env);
-    rows($("link"), [
-      ["last packet", env.ageS === null ? "none yet" : (fresh ? "NEW" : "repeat") + ", age " + env.ageS.toFixed(1) + " s" +
-        (stale ? " STALE" : ""), stale ? "bad" : (fresh ? "ok" : "")],
-      ["RSSI", env.rssiDbm + " dBm"],
-      ["SNR", env.snrDb.toFixed(2) + " dB"],
-      ["received", String(env.rxOk)],
-      ["RX errors (CRC/header)", String(env.rxErr), env.rxErr ? "warn" : ""],
-      ["rejected (format/version, A21-4)", String(env.rxRejected), env.rxRejected ? "bad" : ""],
-      ["loss (seq gaps)", loss.missed + " (" + loss.percent().toFixed(1) + " %)", loss.missed ? "warn" : ""],
-    ]);
-    if (!fresh) {
-      showFlight(null, false, env.ageS); // keepalive: age moves, the last decoded phase stays
-      return;
-    }
-    let p;
-    try {
-      p = HTG4Msg.decodeWire("lora_packet", env.packet);
-    } catch (e) {
-      $("err").textContent = String(e.message || e);
-      return;
-    }
-    loss.add(p.seq);
-    rows($("pkt"), WIRE.fields.map(function (f) {
-      const bad = (f.name === "health" && p.health) || (f.name === "flags" && (p.flags & 1));
-      return [f.name, fieldText(f, p[f.name]), bad ? "bad" : ""];
-    }));
-    const flags = WIRE.fields.find(function (f) { return f.name === "flags"; });
-    const health = WIRE.fields.find(function (f) { return f.name === "health"; });
-    const set = HTG4Msg.bitNames(flags, p.flags);
-    const faults = HTG4Msg.bitNames(health, p.health);
-    const msgs = [];
-    if (set.indexOf("guide_stale") >= 0) msgs.push("GUIDE STALE (field " + p.guide_age_ds + ")");
-    if (set.indexOf("gps_valid") < 0) msgs.push("no current GPS fix");
-    if (faults.length) msgs.push("faults: " + faults.join(", "));
-    $("flags").className = msgs.length ? "bad" : "ok";
-    $("flags").textContent = msgs.length ? msgs.join(" | ") : "no faults";
-    const INT32_MIN = -2147483648;
-    if (p.lat_e7 !== INT32_MIN && p.lon_e7 !== INT32_MIN) {
-      const q = (p.lat_e7 / 1e7).toFixed(6) + "," + (p.lon_e7 / 1e7).toFixed(6);
-      const label = encodeURIComponent(q + " (HT-G4)");
-      $("pin").innerHTML = "<strong>" + (set.indexOf("gps_valid") >= 0 ? "Pin " : "Last pin (not current) ") + q +
-        "</strong><br><a href=\"geo:" + q + "?q=" + label + "\">Open pin in Maps</a>" +
-        "<a href=\"https://maps.google.com/?q=" + encodeURIComponent(q) + "\">Google Maps pin</a>";
-    } else {
-      $("pin").textContent = "no fix seen yet, no pin";
-    }
-    showFlight(p, true, env.ageS);
-  }
-
-  function showFlight(p, isNew, ageS) {
-    if (typeof ageS === "number") lastAgeS = ageS;
-    if (isNew && p) lastPhase = p.phase;
-    const phase = lastPhase;
-    const flags = isNew && p ? p.flags : 0;
-    if (isNew && p && (flags & FlightCmd.FLAG.guide_stale)) FlightCmd.noteEcho(p.guide_age_ds, true);
-    if (isNew && p) holdArmed = p.phase === FlightCmd.PHASE.armed_pad;
-    const echo = isNew && p ? p.cmd_echo : null;
-    const ctr = pending ? FlightCmd.uplinkCounter(pending.bytes) : null;
-    const matched = FlightCmd.echoMatches(echo, ctr);
-    const had = !!pending;
-    if (!isNew || !p) {
-      $("flight-state").textContent = FlightCmd.flightLabel({
-        pending: pending ? pending.name : null, phase: phase, ageS: lastAgeS,
+  // Once a second: ages count up, and the keepalive goes when it is due. A page in the background
+  // sends no keepalive (PG-3); a closed page sends nothing.
+  function tick() {
+    if (viewer.keepaliveDue(now(), document.visibilityState === "visible")) {
+      send(viewer.keepaliveIntent(now(), tapByte()), function (err) {
+        viewer.keepaliveSent(err);
+        draw();
       });
-      return;
     }
-    const step = FlightCmd.afterDownlink(pending ? pending.name : null, phase, flags, true, echo, ctr, lastAgeS);
-    if (pending && step.pending == null) {
-      pending = null;
-      storePending(null);
-    }
-    $("flight-state").textContent = step.label;
-    const names = [];
-    if (isNew && p) {
-      if (!had || matched) {
-        const status = FlightCmd.commandStatus(flags);
-        if (status) names.push(status);
-      }
-      if ((flags & FlightCmd.FLAG.sim) !== 0) names.push("sim");
-      if ((flags & FlightCmd.FLAG.ble_on) !== 0) names.push("ble on");
-    }
-    $("flight-detail").textContent = "counter " + FlightCmd.loadCounter() +
-      (names.length ? "  " + names.join(" ") : "");
+    draw();
   }
+  document.addEventListener("visibilitychange", tick);
 
-  async function writeUp(bytes) {
-    if (!upChar) return;
-    if (upChar.writeValueWithoutResponse) await upChar.writeValueWithoutResponse(bytes);
-    else await upChar.writeValue(bytes);
-  }
-
-  async function send(name, wake) {
-    if (!upChar) {
-      $("flight-detail").textContent = "connect XIAO-GS first";
-      return;
-    }
-    const counter = FlightCmd.takeCounter();
-    const bytes = FlightCmd.encodeCommand(name, counter, wake || 0, HTG4Msg);
-    pending = { name: name, bytes: bytes };
-    storePending(pending);
-    $("flight-state").textContent = FlightCmd.flightLabel({
-      pending: name, phase: lastPhase, ageS: lastAgeS,
-    });
-    try { await writeUp(bytes); } catch (e) { $("err").textContent = String(e.message || e); }
-  }
-
-  async function sendHold() {
-    if (!upChar || pending || !holdArmed) return;
-    const counter = FlightCmd.takeCounter();
-    try { await writeUp(FlightCmd.encodeCommand("hold", counter, 0, HTG4Msg)); } catch (e) { /* next period */ }
-  }
-
-  function onValue(ev) {
-    const val = ev.target.value;
-    if (val) render(GsEnvelope.parse(val));
-  }
-
-  // HIL only: the runner serves this page on 127.0.0.1 with ?hil=1 and has already
-  // granted one device. getDevices() does not open the chooser. Any other host,
-  // including the public page, keeps requestDevice() below.
   function hilTestMode() {
     const host = location.hostname;
     if (host !== "127.0.0.1" && host !== "localhost") return false;
@@ -288,45 +245,50 @@
   }
 
   async function subscribe(dev) {
-    setSt("connecting " + (dev.name || ""), true);
+    setSt("connecting " + (dev.name || ""), "connecting");
     const server = await dev.gatt.connect();
     const svc = await server.getPrimaryService(SVC);
     const down = await svc.getCharacteristic(DOWN);
-    upChar = await svc.getCharacteristic(UP);
-    await readBoardBuild(server);
-    await down.startNotifications();
-    down.addEventListener("characteristicvaluechanged", onValue);
     try {
-      render(GsEnvelope.parse(await down.readValue()));
-    } catch (e) { /* the notify path is enough */ }
-    dev.addEventListener("gattserverdisconnected", function () {
-      upChar = null;
-      setSt("disconnected", false);
+      up = await svc.getCharacteristic(UP);
+    } catch (e) {
+      up = null; // a ground station with no up characteristic: every tap reports not sent
+    }
+    await down.startNotifications();
+    down.addEventListener("characteristicvaluechanged", function (ev) {
+      if (ev.target.value) feed(GsEnvelope.parse(ev.target.value));
     });
-    setSt("subscribed", true);
+    dev.addEventListener("gattserverdisconnected", function () {
+      up = null;
+      setSt("disconnected", "disconnected");
+    });
+    setSt("subscribed", "connected");
+    try {
+      feed(GsEnvelope.parse(await down.readValue()));
+    } catch (e) { /* the notify path is enough */ }
   }
 
   async function connect() {
     if (!navigator.bluetooth) {
-      setSt("no Web Bluetooth (need Chrome, HTTPS)", false);
+      setSt("no Web Bluetooth (need Chrome, HTTPS)", "idle");
       return;
     }
     try {
       if (hilTestMode()) {
         const wanted = new URLSearchParams(location.search).get("ble_name") || "";
         if (!wanted) {
-          setSt("test mode: no device name", false);
+          setSt("test mode: no device name", "idle");
           return;
         }
         if (typeof navigator.bluetooth.getDevices !== "function") {
-          setSt("test mode: no getDevices", false);
+          setSt("test mode: no getDevices", "idle");
           return;
         }
         setSt("test mode");
         const devices = await navigator.bluetooth.getDevices();
         const dev = devices.find(function (d) { return d.name === wanted; });
         if (!dev) {
-          setSt("test mode: " + wanted + " is not granted", false);
+          setSt("test mode: " + wanted + " is not granted", "idle");
           return;
         }
         await subscribe(dev);
@@ -335,28 +297,27 @@
       setSt("picker...");
       const dev = await navigator.bluetooth.requestDevice({
         filters: [{ name: "XIAO-GS" }, { services: [SVC] }],
-        optionalServices: [SVC, DIS],
+        optionalServices: [SVC],
       });
       await subscribe(dev);
     } catch (e) {
-      setSt(String(e), false);
+      setSt(String(e), "idle");
     }
   }
 
   $("btn").addEventListener("click", connect);
-  $("ack").addEventListener("click", function () { send("ack", 0); });
-  $("arm").addEventListener("click", function () { send("arm", 0); });
-  $("disarm").addEventListener("click", function () { send("disarm", 0); });
-  $("sim-on").addEventListener("click", function () { send("sim_set", 0); });
-  $("sim-off").addEventListener("click", function () { send("sim_clear", 0); });
-  $("boost").addEventListener("click", function () { send("sim_boost", 0); });
-  $("wake").addEventListener("click", function () { send("ble_wake", FlightCmd.WAKE_BLE); });
-  let holdTicks = 0;
-  setInterval(function () {
-    holdTicks += 1;
-    if (pending) writeUp(pending.bytes).catch(function () {});
-    else if (holdTicks % 20 === 0) sendHold();
-  }, 1000);
+  setInterval(tick, 1000);
+  draw();
+  // Test hook (firmware/tests/gs/look_gs_web.js): show a prepared viewer at a fixed time, with no radio.
+  // The selected view stays the page's own.
+  window.GsPageTest = {
+    show: function (v, atMs) {
+      v.view = viewer.view;
+      viewer = v;
+      now = function () { return atMs; };
+      draw();
+    },
+  };
 })();
 LogDownload.bind({ button: "log-btn", save: "log-save", status: "log-st", error: "log-err" });
 </script>
