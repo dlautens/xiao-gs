@@ -18,6 +18,8 @@
   const CONTROL_BYTES = 12;
   const OPCODE_RESUME = 1;
   const OPCODE_ABORT = 2;
+  const OPCODE_CONFIRM = 3;
+  const OPCODE_DISCARD = 4;
   const FLAG_LAST = 1;
   const FLAG_CORRUPT = 2;
   const FLAG_TRUNCATED = 4;
@@ -133,6 +135,17 @@
     return "";
   }
 
+  /* Clear the tracker's stored log. Confirm is sent only for a log this page holds in full,
+   * after the user saved it. Discard drops a log with no copy. Both name the log id, and the
+   * tracker checks it against the log on flash and clears nothing on a mismatch. */
+  function confirmText(logId, bytes) {
+    return "Saved " + bytes + " bytes of log " + (logId >>> 0) + ". Let the tracker reuse its flash?";
+  }
+
+  function discardText(logId) {
+    return "Discard log " + (logId >>> 0) + " WITHOUT a copy? This cannot be undone.";
+  }
+
   function Receiver(sizeBytes) {
     this.sizeBytes = sizeBytes;
     this.offset = 0;
@@ -243,11 +256,14 @@
     const $ = function (id) { return document.getElementById(id); };
     const button = $(ids.button);
     const save = $(ids.save);
+    const confirmBtn = $(ids.confirm);
+    const discardBtn = $(ids.discard);
     const status = $(ids.status);
     const error = $(ids.error);
     let receiver = null;
     let logId = 0;
     let device = null;
+    let saved = false;
 
     function setStatus(text, ok) {
       status.textContent = text;
@@ -337,13 +353,58 @@
       }
     }
 
+    async function control(opcode, id, offset) {
+      if (!device || !device.gatt || !device.gatt.connected) {
+        error.textContent = "not connected to XIAO-LOG";
+        return false;
+      }
+      try {
+        const svc = await device.gatt.getPrimaryService(SERVICE);
+        const chr = await svc.getCharacteristic(CONTROL);
+        await chr.writeValue(encodeControl(opcode, id, offset));
+        return true;
+      } catch (e) {
+        error.textContent = "write failed: " + e;
+        return false;
+      }
+    }
+
     button.addEventListener("click", connect);
+    confirmBtn.addEventListener("click", async function () {
+      if (!receiver || !receiver.done) {
+        error.textContent = "download the whole log first";
+        return;
+      }
+      if (!saved) {
+        error.textContent = "save the file first";
+        return;
+      }
+      if (!confirm(confirmText(logId, receiver.offset))) return;
+      if (await control(OPCODE_CONFIRM, logId, receiver.offset)) {
+        setStatus("confirmed; the tracker clears it when it is on the ground and disarmed", true);
+        receiver = null;
+        saved = false;
+      }
+    });
+    discardBtn.addEventListener("click", async function () {
+      if (!logId) {
+        error.textContent = "connect first, to read the log id";
+        return;
+      }
+      if (!confirm(discardText(logId))) return;
+      if (await control(OPCODE_DISCARD, logId, 0)) {
+        setStatus("discard sent for log " + (logId >>> 0), true);
+        receiver = null;
+        saved = false;
+      }
+    });
     save.addEventListener("click", function () {
       if (!receiver) {
         error.textContent = "no log yet";
         return;
       }
       saveFile(fileName(logId, receiver.bytes()), receiver.bytes());
+      saved = true;
     });
   }
 
@@ -362,6 +423,8 @@
     VERSION: VERSION,
     OPCODE_RESUME: OPCODE_RESUME,
     OPCODE_ABORT: OPCODE_ABORT,
+    OPCODE_CONFIRM: OPCODE_CONFIRM,
+    OPCODE_DISCARD: OPCODE_DISCARD,
     FLAG_LAST: FLAG_LAST,
     FLAG_CORRUPT: FLAG_CORRUPT,
     FLAG_TRUNCATED: FLAG_TRUNCATED,
@@ -376,6 +439,8 @@
     Receiver: Receiver,
     nameInLog: nameInLog,
     fileName: fileName,
+    confirmText: confirmText,
+    discardText: discardText,
     bind: bind,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = LogDownload;

@@ -828,6 +828,339 @@ const TABLE = {
   {
    "fields": [
     {
+     "const": 88,
+     "count": 1,
+     "name": "magic",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "const": 3,
+     "count": 1,
+     "name": "version",
+     "offset": 1,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "telemetry": 1
+     },
+     "name": "type",
+     "offset": 2,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "armed_pad": 2,
+      "boost": 3,
+      "boot": 0,
+      "coast": 4,
+      "descent_drogue": 5,
+      "descent_main": 6,
+      "fault": 8,
+      "landed": 7,
+      "retrieval": 9,
+      "safe": 1
+     },
+     "name": "phase",
+     "offset": 3,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "seq",
+     "offset": 4,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "altimeter_only": 2,
+      "armed": 1,
+      "bench_pyro": 7,
+      "ble_on": 10,
+      "ematch_test": 8,
+      "gps_valid": 5,
+      "guide_stale": 0,
+      "landed_safe": 3,
+      "ready_to_arm": 14,
+      "retrieval_latch": 9,
+      "retrieval_step_b0": 11,
+      "retrieval_step_b1": 12,
+      "retrieval_step_b2": 13,
+      "sim": 6,
+      "warm_restart": 4
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 6,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "lat_e7",
+     "offset": 8,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "lon_e7",
+     "offset": 12,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "h_msl_cm",
+     "offset": 16,
+     "type": "i32",
+     "unit": "cm"
+    },
+    {
+     "count": 1,
+     "name": "alt_agl_m",
+     "offset": 20,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 1,
+     "name": "vz_n_mps",
+     "offset": 24,
+     "type": "f32",
+     "unit": "m/s"
+    },
+    {
+     "count": 1,
+     "name": "guide_age_ds",
+     "offset": 28,
+     "type": "u16",
+     "unit": "ds"
+    },
+    {
+     "count": 1,
+     "name": "next_rx_ds",
+     "offset": 30,
+     "type": "u16",
+     "unit": "ds"
+    },
+    {
+     "count": 1,
+     "name": "vbat_dv",
+     "offset": 32,
+     "type": "u8",
+     "unit": "dV"
+    },
+    {
+     "bits": {
+      "guide_av_low": 1,
+      "pyro_low": 2,
+      "servo_low": 3,
+      "tracker_av_degraded": 4,
+      "tracker_av_low": 0
+     },
+     "count": 1,
+     "name": "batt",
+     "offset": 33,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pyro_fired",
+     "offset": 34,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pyro_cont",
+     "offset": 35,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "fix_2d": 2,
+      "fix_3d": 3,
+      "none": 0
+     },
+     "name": "fix_type",
+     "offset": 36,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "num_sv",
+     "offset": 37,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "baro": 2,
+      "gps": 4,
+      "highg": 1,
+      "imu": 0,
+      "link": 7,
+      "log_flash": 6,
+      "mag": 3,
+      "tracker_baro": 5
+     },
+     "count": 1,
+     "name": "health",
+     "offset": 38,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pyro_locked",
+     "offset": 39,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "baro_fault": 1,
+      "batt_block": 5,
+      "batt_warn": 4,
+      "fault_armed": 6,
+      "log_block": 3,
+      "log_warn": 2,
+      "no_gps": 0
+     },
+     "count": 1,
+     "hard_stop": [
+      "baro_fault",
+      "log_block",
+      "batt_block"
+     ],
+     "name": "warn",
+     "offset": 40,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "warn_acked",
+     "offset": 42,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_last",
+     "offset": 44,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_next",
+     "offset": 45,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "bad_signature": 4,
+      "busy": 12,
+      "channel_locked": 11,
+      "ematch_setup": 9,
+      "fixture": 8,
+      "held_missed": 10,
+      "moving": 14,
+      "nogo": 5,
+      "none": 0,
+      "not_applied": 13,
+      "replay": 3,
+      "sim_rule": 7,
+      "warn_not_acked": 6,
+      "worked": 1,
+      "wrong_path": 15,
+      "wrong_phase": 2
+     },
+     "name": "cmd_result",
+     "offset": 46,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "ch1": 0,
+      "ch2": 1,
+      "ch3": 2,
+      "ch4": 3
+     },
+     "count": 1,
+     "name": "pyro_fixture",
+     "offset": 47,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "ematch",
+     "offset": 48,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "ematch_value",
+     "offset": 49,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "guide_restarted": 2,
+      "link_lost": 1,
+      "none": 0,
+      "xiao_restarted": 3
+     },
+     "mask": 7,
+     "name": "fault_armed_reason",
+     "offset": 50,
+     "rank": {
+      "guide_restarted": 3,
+      "link_lost": 1,
+      "none": 0,
+      "xiao_restarted": 2
+     },
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad1",
+     "offset": 51,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1281,
+   "kind": "bus",
+   "name": "lora_packet",
+   "size": 52,
+   "version": 3
+  },
+  {
+   "fields": [
+    {
      "count": 3,
      "name": "dtheta_n_rad",
      "offset": 0,
@@ -1159,7 +1492,7 @@ const TABLE = {
      "unit": "1"
     },
     {
-     "const": 3,
+     "const": 4,
      "count": 1,
      "name": "version",
      "offset": 1,
@@ -1383,15 +1716,15 @@ const TABLE = {
     },
     {
      "count": 1,
-     "name": "cmd_last",
+     "name": "cmd_next",
      "offset": 44,
-     "type": "u8",
+     "type": "u16",
      "unit": "1"
     },
     {
      "count": 1,
-     "name": "cmd_next",
-     "offset": 45,
+     "name": "cmd_last",
+     "offset": 46,
      "type": "u8",
      "unit": "1"
     },
@@ -1416,7 +1749,7 @@ const TABLE = {
       "wrong_phase": 2
      },
      "name": "cmd_result",
-     "offset": 46,
+     "offset": 47,
      "type": "u8",
      "unit": "1"
     },
@@ -1429,21 +1762,21 @@ const TABLE = {
      },
      "count": 1,
      "name": "pyro_fixture",
-     "offset": 47,
-     "type": "u8",
-     "unit": "1"
-    },
-    {
-     "count": 1,
-     "name": "ematch",
      "offset": 48,
      "type": "u8",
      "unit": "1"
     },
     {
      "count": 1,
-     "name": "ematch_value",
+     "name": "ematch",
      "offset": 49,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "ematch_value",
+     "offset": 50,
      "type": "u8",
      "unit": "1"
     },
@@ -1457,7 +1790,7 @@ const TABLE = {
      },
      "mask": 7,
      "name": "fault_armed_reason",
-     "offset": 50,
+     "offset": 51,
      "rank": {
       "guide_restarted": 3,
       "link_lost": 1,
@@ -1466,20 +1799,13 @@ const TABLE = {
      },
      "type": "u8",
      "unit": "1"
-    },
-    {
-     "count": 1,
-     "name": "pad1",
-     "offset": 51,
-     "type": "u8",
-     "unit": "1"
     }
    ],
    "id": 1281,
    "kind": "wire",
    "name": "lora_packet",
    "size": 52,
-   "version": 3
+   "version": 4
   },
   {
    "fields": [

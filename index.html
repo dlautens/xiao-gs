@@ -108,6 +108,8 @@
       <div class="btns">
         <button id="log-btn" type="button">Download from XIAO-LOG</button>
         <button id="log-save" type="button">Save file</button>
+        <button id="log-confirm" type="button">Confirm saved</button>
+        <button id="log-discard" type="button">Discard log</button>
       </div>
       <p id="log-st">idle</p>
       <p id="log-err"></p>
@@ -347,7 +349,7 @@
     },
   };
 })();
-LogDownload.bind({ button: "log-btn", save: "log-save", status: "log-st", error: "log-err" });
+LogDownload.bind({ button: "log-btn", save: "log-save", confirm: "log-confirm", discard: "log-discard", status: "log-st", error: "log-err" });
 </script>
 </body>
 </html>

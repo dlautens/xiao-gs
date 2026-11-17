@@ -142,7 +142,7 @@
     no_gps: "No GPS fix",
     baro_fault: "Baro fault",
     log_warn: "Log space low",
-    log_block: "Log space full",
+    log_block: "Log not recording (full, held for download, or fault)",
     batt_warn: "Battery low or unknown",
     batt_block: "Battery too low",
     fault_armed: "Fault while armed",
