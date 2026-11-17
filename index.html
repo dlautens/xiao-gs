@@ -211,14 +211,42 @@
     }).then(function () { done(""); }, function (e) { done(String(e.message || e)); });
   }
 
+  // Unlock is signed by the relay and is not sent on LoRa. The page reads the 18 signed bytes
+  // back from the up characteristic and writes them to the rocket (XIAO-LOG unlock).
+  function sendUnlock(intent, done) {
+    if (!up || viewer.ble !== "connected") {
+      done("phone not connected to the ground station");
+      return;
+    }
+    const ch = up;
+    const bytes = GsEnvelope.encodeIntent(HTG4Msg, intent);
+    writing = writing.then(function () {
+      return (ch.writeValueWithResponse ? ch.writeValueWithResponse(bytes) : ch.writeValue(bytes)).then(function () {
+        return ch.readValue();
+      }).then(function (signed) {
+        const raw = new Uint8Array(signed.buffer, signed.byteOffset, signed.byteLength);
+        if (raw.length !== LogDownload.UNLOCK_BYTES) throw new Error("ground station did not return the signed unlock");
+        return LogDownload.sendToRocket(raw);
+      });
+    }).then(function (reason) { done("", reason); }, function (e) { done(String(e.message || e)); });
+  }
+
   // A tap on a page button: one intent, or a change to what the page shows (the Arm confirm step,
-  // a find option).
+  // a find option, the unlock confirm step).
   document.addEventListener("click", function (ev) {
     const b = ev.target.closest("button[data-press]");
     if (!b) return;
     const intent = viewer.press(b.dataset.press, b.dataset.arg, new Date().toLocaleTimeString(), tapByte());
     draw();
     if (!intent) return;
+    if (intent.via === "rocket-ble") {
+      sendUnlock(intent, function (err, reason) {
+        if (err) viewer.sent(err);
+        else viewer.noteUnlock(reason);
+        draw();
+      });
+      return;
+    }
     send(intent, function (err) {
       viewer.sent(err);
       draw();

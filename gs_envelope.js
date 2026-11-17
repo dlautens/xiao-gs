@@ -175,6 +175,7 @@
     disarm: { label: "Disarm", doing: "disarming" },
     ack_warning: { label: "Ack", doing: "acking" },
     find: { label: "Find", doing: "sending find" },
+    unlock: { label: "Unlock", doing: "unlocking" },
     sim_on: { label: "Sim on", doing: "turning sim on" },
     sim_off: { label: "Sim off", doing: "turning sim off" },
     sim_boost: { label: "Sim boost", doing: "sim boost" },
@@ -237,6 +238,7 @@
     this.view = "pad"; // kept by the page, with the tap and keepalive state below
     this.lastTap = null; // { label, time, tap, status: confirm | cancelled | sending | sent | not_sent, error }
     this.confirmArm = false; // the confirm step before Arm (HG-241)
+    this.confirmUnlock = false; // the confirm step before the rocket-found unlock (#308)
     // Find options being chosen. Default beeper and Bluetooth: the 0.x retrieval walk-up and the
     // Bluetooth log download and unlock; Wi-Fi download comes later (#331).
     this.findOpts = { beeper: true, ble: true, wifi: false };
@@ -277,6 +279,7 @@
       return null;
     }
     this.confirmArm = false;
+    this.confirmUnlock = false;
     if (name === "arm") {
       this.confirmArm = true;
       tap.label = "Arm";
@@ -294,6 +297,25 @@
       const opts = this.findOpts;
       tap.label = "Find (" + this.findText() + ")";
       intent = { cmd: "find", find: FIND_OPTS.map(function (o) { return o[0]; }).filter(function (k) { return opts[k]; }) };
+    } else if (name === "unlock") {
+      this.confirmUnlock = true;
+      tap.label = "Unlock";
+      tap.status = "confirm";
+    } else if (name === "unlock-cancel") {
+      tap.label = "Unlock";
+      tap.status = "cancelled";
+    } else if (name === "unlock-confirm") {
+      tap.label = "Confirm unlock";
+      // The find command turns rocket Bluetooth on. Until that bit is set, the page does not
+      // ask the relay to sign an unlock. This is the path check, not a copy of the core.
+      if (!this.bits("flags").ble_on) {
+        tap.status = "not_sent";
+        tap.error = "send find with Bluetooth first";
+      } else {
+        // via tells the page to read the signed bytes back and write them to the rocket.
+        // The relay does not put this command on LoRa.
+        intent = { cmd: "unlock", via: "rocket-ble" };
+      }
     } else if (name === "ack") {
       // The ack needs the warning's GO-NOGO code (lora_uplink code). The bit-to-code table is held
       // only by the rocket's cycle library today, so the page has no code to send.
@@ -308,6 +330,14 @@
     return intent;
   };
   // The page reports whether the write reached the ground station. err is "" when it did.
+  // The rocket's answer on the XIAO-LOG unlock characteristic: one cmd_result byte.
+  Viewer.prototype.noteUnlock = function (resultByte) {
+    if (!this.lastTap) return;
+    const name = this.Msg.enumName(this.Msg.fieldOf("lora_packet", "cmd_result"), resultByte);
+    const words = RESULT[name] || { text: "outcome " + resultByte };
+    this.lastTap.status = "answered";
+    this.lastTap.answer = words.text + (words.next ? " " + words.next : "");
+  };
   Viewer.prototype.sent = function (err) {
     if (!this.lastTap) return;
     this.lastTap.status = err ? "not_sent" : "sent";
@@ -556,10 +586,11 @@
     const t = this.lastTap;
     if (!t) return "";
     const what = {
-      confirm: "Tap Confirm arm to send it.",
+      confirm: t.label === "Unlock" ? "Tap Confirm unlock to send it to the rocket over Bluetooth." : "Tap Confirm arm to send it.",
       cancelled: "Cancelled, not sent.",
       sending: "Sending to the ground station.",
       sent: "Sent to the ground station. The rocket decides.",
+      answered: t.answer || "The rocket answered.",
       not_sent: "Not sent: " + t.error + ".",
     }[t.status];
     return '<p class="note">Last tap: ' + esc(t.label) + ", " + esc(t.time) + ". " + esc(what) + "</p>";
@@ -698,7 +729,17 @@
       return '<button type="button" class="opt' + (on ? " on" : "") + '" data-press="find-opt" data-arg="' + o[0] +
         '" aria-pressed="' + on + '">' + (on ? ICON.ok : "") + esc(o[1]) + ": " + (on ? "ON" : "off") + "</button>";
     }).join("") + "</div>" +
-      '<button type="button" class="big" data-press="find">Send find (' + esc(this.findText()) + ")</button>" + this.lastTapHtml();
+      '<button type="button" class="big" data-press="find">Send find (' + esc(this.findText()) + ")</button>" +
+      this.unlockHtml() + this.lastTapHtml();
+  };
+  // Rocket found, unlock (#308). The first tap asks for a confirm. Confirm is the only tap that
+  // returns an intent, and that intent is marked rocket-ble so the page does not leave it on LoRa.
+  Viewer.prototype.unlockHtml = function () {
+    if (this.confirmUnlock) {
+      return '<div class="btns confirm"><button type="button" class="big" data-press="unlock-confirm">Confirm unlock</button>' +
+        '<button type="button" class="big refuse" data-press="unlock-cancel">Cancel</button></div>';
+    }
+    return '<button type="button" class="big" data-press="unlock">Rocket found, unlock</button>';
   };
   Viewer.prototype.benchHtml = function () {
     const p = this.pkt;

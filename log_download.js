@@ -8,6 +8,8 @@
   const STATUS = "8aa1c002-c0de-4b1e-9a11-58414f2d4753";
   const CONTROL = "8aa1c003-c0de-4b1e-9a11-58414f2d4753";
   const DATA = "8aa1c004-c0de-4b1e-9a11-58414f2d4753";
+  const UNLOCK = "8aa1c005-c0de-4b1e-9a11-58414f2d4753";
+  const UNLOCK_BYTES = 18;
   const PAYLOAD = 200;
   const MTU = 247;
   const VERSION = 1;
@@ -92,6 +94,36 @@
     dv.setUint32(10, crc32(body), true);
     out.set(body, HEADER);
     return out;
+  }
+
+  // Write the relay's signed 18-byte uplink and read the rocket's one-byte cmd_result.
+  // The characteristic decides nothing; the board's unlock core does.
+  function exchangeUnlock(ch, bytes) {
+    const body = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (body.length !== UNLOCK_BYTES) return Promise.reject(new Error("signed unlock is 18 bytes"));
+    const write = ch.writeValueWithResponse ? ch.writeValueWithResponse(body) : ch.writeValue(body);
+    return Promise.resolve(write).then(function () { return ch.readValue(); }).then(function (got) {
+      const dv = viewOf(got);
+      if (dv.byteLength < 1) throw new Error("rocket returned no unlock result");
+      return dv.getUint8(0);
+    });
+  }
+
+  let rocket = null;
+  function sendToRocket(bytes) {
+    if (typeof navigator === "undefined" || !navigator.bluetooth) {
+      return Promise.reject(new Error("no Web Bluetooth"));
+    }
+    const ready = rocket && rocket.gatt ? Promise.resolve(rocket) : navigator.bluetooth.requestDevice({
+      filters: [{ name: DEVICE_NAME }],
+      optionalServices: [SERVICE],
+    }).then(function (dev) { rocket = dev; return dev; });
+    return ready.then(function (dev) {
+      const link = dev.gatt.connected ? Promise.resolve(dev.gatt) : dev.gatt.connect();
+      return link.then(function (server) { return server.getPrimaryService(SERVICE); })
+        .then(function (svc) { return svc.getCharacteristic(UNLOCK); })
+        .then(function (ch) { return exchangeUnlock(ch, bytes); });
+    });
   }
 
   function denyText(deny) {
@@ -321,6 +353,10 @@
     STATUS: STATUS,
     CONTROL: CONTROL,
     DATA: DATA,
+    UNLOCK: UNLOCK,
+    UNLOCK_BYTES: UNLOCK_BYTES,
+    exchangeUnlock: exchangeUnlock,
+    sendToRocket: sendToRocket,
     PAYLOAD: PAYLOAD,
     MTU: MTU,
     VERSION: VERSION,
