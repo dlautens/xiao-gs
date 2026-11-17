@@ -1988,6 +1988,7 @@ const TABLE = {
     },
     {
      "bits": {
+      "armed": 1,
       "sim": 0
      },
      "count": 1,

@@ -151,6 +151,9 @@
   const FAULT_REASON = { link_lost: "Link lost 60 s", guide_restarted: "Guide restarted", xiao_restarted: "XIAO restarted" };
   // fault_armed is shown only before launch (GO-NOGO); the rocket clears it at launch detection.
   const BEFORE_LAUNCH = { boot: true, safe: true, armed_pad: true };
+  // A launch while safe flies these phases with the armed flag clear, and pyro stays locked out for
+  // that whole flight (David, 2026-11-16). The page says so beside the phase.
+  const IN_FLIGHT = { boost: true, coast: true, descent_drogue: true, descent_main: true };
   const PHASE = {
     boot: { word: "STARTING", sub: "booting", tone: "idle", text: "starting up" },
     safe: { word: "SAFE", sub: "on pad, not armed", tone: "safe", text: "pad safe" },
@@ -484,6 +487,10 @@
     } else if (fl.sim) {
       sub += ", sim";
       text += " (sim)";
+    }
+    if (IN_FLIGHT[name] && !fl.armed) {
+      sub += ", not armed";
+      text += " (not armed)";
     }
     // The command in flight beside the state, for example "pad safe (arming)" (HG-242).
     const c = this.cmd;
