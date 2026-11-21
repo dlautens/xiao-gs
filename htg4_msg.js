@@ -4,16 +4,71 @@
 "use strict";
 const TABLE = {
  "current": {
+  "baro_health": 1,
   "baro_sample": 1,
   "fire_request": 1,
   "flight_state": 1,
-  "gps_pvt": 1,
+  "flush_request": 1,
+  "gps_health": 1,
+  "gps_pvt": 2,
+  "gps_raw": 1,
+  "gps_week": 1,
+  "guide_command": 1,
+  "health_board": 2,
   "highg_sample": 1,
   "imu_sample": 1,
+  "last_fix": 1,
+  "led_request": 1,
   "link_stats": 1,
+  "log_density": 1,
+  "log_recovery": 2,
+  "logger_health": 1,
   "nav_correction": 1,
   "nav_state": 1,
-  "pyro_status": 2
+  "power_level": 1,
+  "pyro_status": 2,
+  "reported_state": 3,
+  "retrieval_profile": 1,
+  "retrieval_wake": 1,
+  "time_model": 1,
+  "trk_accel": 1,
+  "trk_baro": 2,
+  "trk_command": 1,
+  "trk_command_counter": 1,
+  "trk_command_outcome": 1,
+  "trk_command_reply": 1,
+  "trk_command_restore": 1,
+  "trk_decision": 1,
+  "trk_event": 1,
+  "trk_last_command": 1,
+  "trk_nav": 1,
+  "trk_restart": 2,
+  "trk_unlock_request": 1
+ },
+ "enums": {
+  "event_code": {
+   "doc": "A flight event, declared here because flight writes the events. The first codes are flight's detector events; the LoRa packet's event block references it (tracker/lora.md, The packet). Codes never change meaning; new ones, such as the Guide's burnout, drogue and main, are added at the end without a packet version bump (proto/enum-codes.txt).",
+   "type": "u8",
+   "values": {
+    "apogee": 2,
+    "landing": 3,
+    "launch": 1,
+    "none": 0
+   }
+  },
+  "state": {
+   "doc": "The flight state, one list for the Tracker, the Guide and the web page. Recovery means parachute deployment and Retrieval means finding the landed rocket. Codes never change meaning; a new state is added at the end (proto/enum-codes.txt).",
+   "type": "u8",
+   "values": {
+    "armed": 2,
+    "boost": 3,
+    "boot": 0,
+    "descent": 4,
+    "fault": 6,
+    "retrieval": 5,
+    "safe": 1
+   }
+  }
  },
  "frame": [
   {
@@ -22,7 +77,7 @@ const TABLE = {
      "add": -12,
      "field": "len"
     },
-    "max": 52,
+    "max": 60,
     "name": "pkt"
    },
    "head": {
@@ -132,7 +187,9 @@ const TABLE = {
    },
    {
     "bits": {
-     "republished": 0
+     "replay": 1,
+     "republished": 0,
+     "stale": 2
     },
     "count": 1,
     "name": "flags",
@@ -152,6 +209,49 @@ const TABLE = {
   "version": 1
  },
  "layouts": [
+  {
+   "fields": [
+    {
+     "count": 1,
+     "enum": {
+      "current": 1,
+      "failed": 3,
+      "never": 0,
+      "stale": 2
+     },
+     "name": "state",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "on_wake",
+     "offset": 1,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "period_ms",
+     "offset": 2,
+     "type": "u16",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "fail_count",
+     "offset": 4,
+     "type": "u32",
+     "unit": "1"
+    }
+   ],
+   "id": 1050,
+   "kind": "bus",
+   "name": "baro_health",
+   "size": 8,
+   "version": 1
+  },
   {
    "fields": [
     {
@@ -322,6 +422,151 @@ const TABLE = {
    "fields": [
     {
      "count": 1,
+     "enum": {
+      "low_pack": 1
+     },
+     "name": "reason",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 3,
+     "name": "pad0",
+     "offset": 1,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1057,
+   "kind": "bus",
+   "name": "flush_request",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "enum": {
+      "full_rate": 0,
+      "reduced_rate": 1,
+      "sleep_cold": 3,
+      "sleep_warm": 2
+     },
+     "name": "mode",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "answered": 1,
+      "no_answer": 2,
+      "waiting": 0
+     },
+     "name": "setup",
+     "offset": 1,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "dead_reckoning": 1,
+      "fix_2d": 2,
+      "fix_3d": 3,
+      "gnss_dr": 4,
+      "none": 0,
+      "time_only": 5
+     },
+     "name": "fix_type",
+     "offset": 2,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "sv_view",
+     "offset": 3,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cno_max_dbhz",
+     "offset": 4,
+     "type": "u8",
+     "unit": "dBHz"
+    },
+    {
+     "count": 1,
+     "name": "cno_avg_dbhz",
+     "offset": 5,
+     "type": "u8",
+     "unit": "dBHz"
+    },
+    {
+     "count": 2,
+     "name": "pad0",
+     "offset": 6,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "inf_error_count",
+     "offset": 8,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "inf_warning_count",
+     "offset": 12,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "ck_error_count",
+     "offset": 16,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "oversize_count",
+     "offset": 20,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "sync_skip_count",
+     "offset": 24,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "uart_overflow_count",
+     "offset": 28,
+     "type": "u32",
+     "unit": "1"
+    }
+   ],
+   "id": 1043,
+   "kind": "bus",
+   "name": "gps_health",
+   "size": 32,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
      "name": "itow_ms",
      "offset": 0,
      "type": "u32",
@@ -432,6 +677,455 @@ const TABLE = {
    "fields": [
     {
      "count": 1,
+     "name": "itow_ms",
+     "offset": 0,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "lat_e7",
+     "offset": 4,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "lon_e7",
+     "offset": 8,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "h_msl_mm",
+     "offset": 12,
+     "type": "i32",
+     "unit": "mm"
+    },
+    {
+     "count": 3,
+     "name": "vel_n_mmps",
+     "offset": 16,
+     "type": "i32",
+     "unit": "mm/s"
+    },
+    {
+     "count": 1,
+     "name": "h_acc_mm",
+     "offset": 28,
+     "type": "u32",
+     "unit": "mm"
+    },
+    {
+     "count": 1,
+     "name": "v_acc_mm",
+     "offset": 32,
+     "type": "u32",
+     "unit": "mm"
+    },
+    {
+     "count": 1,
+     "name": "s_acc_mmps",
+     "offset": 36,
+     "type": "u32",
+     "unit": "mm/s"
+    },
+    {
+     "count": 1,
+     "name": "pdop_x100",
+     "offset": 40,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "dead_reckoning": 1,
+      "fix_2d": 2,
+      "fix_3d": 3,
+      "gnss_dr": 4,
+      "none": 0,
+      "time_only": 5
+     },
+     "name": "fix_type",
+     "offset": 42,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "num_sv",
+     "offset": 43,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "rx_valid",
+     "offset": 44,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "rx_flags",
+     "offset": 45,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "good": 2,
+      "none": 0,
+      "poor": 1
+     },
+     "name": "quality",
+     "offset": 46,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "invalid_llh": 1,
+      "stamp_isr": 0
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 47,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1025,
+   "kind": "bus",
+   "name": "gps_pvt",
+   "size": 48,
+   "version": 2
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "msg_seq",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "dropped_count",
+     "offset": 4,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "total_len",
+     "offset": 8,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "part",
+     "offset": 10,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "parts",
+     "offset": 11,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "len",
+     "offset": 12,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 14,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 224,
+     "name": "data",
+     "offset": 16,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1044,
+   "kind": "bus",
+   "name": "gps_raw",
+   "size": 240,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "week",
+     "offset": 0,
+     "type": "i16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "leap_s",
+     "offset": 2,
+     "type": "i8",
+     "unit": "s"
+    },
+    {
+     "count": 1,
+     "name": "rx_valid",
+     "offset": 3,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1045,
+   "kind": "bus",
+   "name": "gps_week",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "cmd_number",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "code",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd",
+     "offset": 4,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "channel",
+     "offset": 5,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "find",
+     "offset": 6,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 7,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1061,
+   "kind": "bus",
+   "name": "guide_command",
+   "size": 8,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 32,
+     "name": "entry_code",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "acked": 1,
+      "hard_stop": 0
+     },
+     "count": 32,
+     "name": "entry_flags",
+     "offset": 64,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "guide_age_ms",
+     "offset": 96,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "entries",
+     "offset": 100,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "guide_health",
+     "offset": 101,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "entries_overflow": 1,
+      "guide_link_up": 0
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 102,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 103,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1051,
+   "kind": "bus",
+   "name": "health_board",
+   "size": 104,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 32,
+     "name": "entry_code",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "acked": 1,
+      "hard_stop": 0
+     },
+     "count": 32,
+     "name": "entry_flags",
+     "offset": 64,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "guide_age_ms",
+     "offset": 96,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "entries",
+     "offset": 100,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "guide_health",
+     "offset": 101,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "entries_overflow": 1,
+      "guide_link_up": 0
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 102,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 103,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "vbat_v",
+     "offset": 104,
+     "type": "f32",
+     "unit": "V"
+    },
+    {
+     "bits": {
+      "guide_av_low": 1,
+      "pyro_low": 2,
+      "servo_low": 3,
+      "tracker_av_degraded": 4,
+      "tracker_av_low": 0
+     },
+     "count": 1,
+     "name": "batt",
+     "offset": 108,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "healthy": 1,
+      "lost": 2,
+      "not_installed": 0
+     },
+     "name": "guide_status",
+     "offset": 109,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad1",
+     "offset": 110,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1051,
+   "kind": "bus",
+   "name": "health_board",
+   "size": 112,
+   "version": 2
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
      "name": "n",
      "offset": 0,
      "type": "u8",
@@ -534,6 +1228,115 @@ const TABLE = {
    "fields": [
     {
      "count": 1,
+     "name": "lat_e7",
+     "offset": 0,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "lon_e7",
+     "offset": 4,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "h_msl_mm",
+     "offset": 8,
+     "type": "i32",
+     "unit": "mm"
+    },
+    {
+     "count": 1,
+     "name": "itow_ms",
+     "offset": 12,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "wake_seq",
+     "offset": 16,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "fix_type",
+     "offset": 20,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "have": 0,
+      "stale": 1
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 21,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 22,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1064,
+   "kind": "bus",
+   "name": "last_fix",
+   "size": 24,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "enum": {
+      "fast_blink": 2,
+      "off": 0,
+      "slow_blink": 1,
+      "solid": 3
+     },
+     "name": "amber",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "off": 0,
+      "on": 1
+     },
+     "name": "green",
+     "offset": 1,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1060,
+   "kind": "bus",
+   "name": "led_request",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
      "name": "window_ms",
      "offset": 0,
      "type": "u32",
@@ -621,6 +1424,229 @@ const TABLE = {
    "kind": "bus",
    "name": "link_stats",
    "size": 92,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "step",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1048,
+   "kind": "bus",
+   "name": "log_density",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "log_id",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "restart_seq",
+     "offset": 4,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 20,
+     "name": "restart",
+     "offset": 8,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_next",
+     "offset": 28,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "closed": 3,
+      "have_counter": 1,
+      "have_restart": 0,
+      "resumed": 2
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 30,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 31,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1059,
+   "kind": "bus",
+   "name": "log_recovery",
+   "size": 32,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "log_id",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "restart_seq",
+     "offset": 4,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 28,
+     "name": "restart",
+     "offset": 8,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_next",
+     "offset": 36,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "closed": 3,
+      "have_counter": 1,
+      "have_restart": 0,
+      "resumed": 2
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 38,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 39,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1059,
+   "kind": "bus",
+   "name": "log_recovery",
+   "size": 40,
+   "version": 2
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "log_id",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "flight_free_bytes",
+     "offset": 4,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "drops",
+     "offset": 8,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "restart_lost",
+     "offset": 12,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "restart_seq_landed",
+     "offset": 16,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "restart_due",
+     "offset": 20,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "flight": 1,
+      "landed": 2,
+      "pad": 0
+     },
+     "name": "area",
+     "offset": 21,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "closed_waiting": 1,
+      "flash_fault": 2,
+      "open": 0,
+      "overflow": 5,
+      "restart_landed": 6,
+      "room_full_ok": 4,
+      "room_low_ok": 3
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 22,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 23,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1058,
+   "kind": "bus",
+   "name": "logger_health",
+   "size": 24,
    "version": 1
   },
   {
@@ -1319,6 +2345,29 @@ const TABLE = {
    "fields": [
     {
      "count": 1,
+     "name": "level",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1046,
+   "kind": "bus",
+   "name": "power_level",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
      "name": "fired",
      "offset": 0,
      "type": "u8",
@@ -1444,41 +2493,1853 @@ const TABLE = {
    "name": "pyro_status",
    "size": 10,
    "version": 2
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "warn",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "warn_acked",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "guide_lost_ms",
+     "offset": 4,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "chirp_count",
+     "offset": 8,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "armed": 2,
+      "boost": 3,
+      "boot": 0,
+      "descent": 4,
+      "fault": 6,
+      "retrieval": 5,
+      "safe": 1
+     },
+     "name": "state",
+     "offset": 12,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "ble_on": 3,
+      "find_received": 2,
+      "latched": 1,
+      "none": 0,
+      "unlock_pending": 4
+     },
+     "name": "retrieval_step",
+     "offset": 13,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "healthy": 1,
+      "lost": 2,
+      "not_installed": 0
+     },
+     "name": "guide",
+     "offset": 14,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "fault_armed_reason",
+     "offset": 15,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "prep_latch",
+     "offset": 16,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 17,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "armed": 0,
+      "beeper_on": 4,
+      "ble_on": 6,
+      "ready_to_arm": 7,
+      "retrieval_latch": 3,
+      "settling": 2,
+      "sim": 1,
+      "wifi_on": 5
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 18,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1035,
+   "kind": "bus",
+   "name": "reported_state",
+   "size": 20,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "launch_t_us",
+     "offset": 0,
+     "type": "i64",
+     "unit": "us"
+    },
+    {
+     "count": 1,
+     "name": "warn",
+     "offset": 8,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "warn_acked",
+     "offset": 10,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "guide_lost_ms",
+     "offset": 12,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "chirp_count",
+     "offset": 16,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "armed": 2,
+      "boost": 3,
+      "boot": 0,
+      "descent": 4,
+      "fault": 6,
+      "retrieval": 5,
+      "safe": 1
+     },
+     "name": "state",
+     "offset": 20,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "ble_on": 3,
+      "find_received": 2,
+      "latched": 1,
+      "none": 0,
+      "unlock_pending": 4
+     },
+     "name": "retrieval_step",
+     "offset": 21,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "healthy": 1,
+      "lost": 2,
+      "not_installed": 0
+     },
+     "name": "guide",
+     "offset": 22,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "fault_armed_reason",
+     "offset": 23,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "prep_latch",
+     "offset": 24,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 25,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "armed": 0,
+      "beeper_on": 4,
+      "ble_on": 6,
+      "ready_to_arm": 7,
+      "retrieval_latch": 3,
+      "settling": 2,
+      "sim": 1,
+      "warm_restart": 8,
+      "wifi_on": 5
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 26,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad1",
+     "offset": 28,
+     "type": "u32",
+     "unit": "1"
+    }
+   ],
+   "id": 1035,
+   "kind": "bus",
+   "name": "reported_state",
+   "size": 32,
+   "version": 2
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "launch_t_us",
+     "offset": 0,
+     "type": "i64",
+     "unit": "us"
+    },
+    {
+     "count": 1,
+     "name": "guide_lost_ms",
+     "offset": 8,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "count": 1,
+     "name": "warn",
+     "offset": 12,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "armed": 0,
+      "ready_to_arm": 3,
+      "retrieval_latch": 2,
+      "settling": 1,
+      "warm_restart": 4
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 14,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum_ref": "state",
+     "name": "state",
+     "offset": 16,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "ble_on": 3,
+      "find_received": 2,
+      "latched": 1,
+      "none": 0,
+      "unlock_pending": 4
+     },
+     "name": "retrieval_step",
+     "offset": 17,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "healthy": 1,
+      "lost": 2,
+      "not_installed": 0
+     },
+     "name": "guide",
+     "offset": 18,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "fault_armed_reason",
+     "offset": 19,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "prep_latch",
+     "offset": 20,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 3,
+     "name": "pad0",
+     "offset": 21,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1035,
+   "kind": "bus",
+   "name": "reported_state",
+   "size": 24,
+   "version": 3
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "active",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "stored",
+     "offset": 1,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "stored": 0
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 2,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 3,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1062,
+   "kind": "bus",
+   "name": "retrieval_profile",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    }
+   ],
+   "id": 1047,
+   "kind": "bus",
+   "name": "retrieval_wake",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "gps_offset_us",
+     "offset": 0,
+     "type": "i64",
+     "unit": "us"
+    },
+    {
+     "count": 1,
+     "name": "rate_ppb",
+     "offset": 8,
+     "type": "i64",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "fit_age_ms",
+     "offset": 16,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "bits": {
+      "valid": 0
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 20,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 3,
+     "name": "pad0",
+     "offset": 21,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1049,
+   "kind": "bus",
+   "name": "time_model",
+   "size": 24,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 3,
+     "name": "f_b_mps2",
+     "offset": 0,
+     "type": "f32",
+     "unit": "m/s^2"
+    },
+    {
+     "bits": {
+      "saturated": 0
+     },
+     "count": 1,
+     "name": "health",
+     "offset": 12,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 3,
+     "name": "pad0",
+     "offset": 13,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1027,
+   "kind": "bus",
+   "name": "trk_accel",
+   "size": 16,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "pressure_pa256",
+     "offset": 0,
+     "type": "u32",
+     "unit": "Pa/256"
+    },
+    {
+     "count": 1,
+     "name": "temp_cdegc",
+     "offset": 4,
+     "type": "i16",
+     "unit": "cdegC"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "x1": 1,
+      "x16": 5,
+      "x2": 2,
+      "x4": 3,
+      "x8": 4
+     },
+     "name": "osrs_p",
+     "offset": 6,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 7,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1026,
+   "kind": "bus",
+   "name": "trk_baro",
+   "size": 8,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "pressure_pa",
+     "offset": 0,
+     "type": "f32",
+     "unit": "Pa"
+    },
+    {
+     "count": 1,
+     "name": "alt_std_atm_m",
+     "offset": 4,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 1,
+     "name": "temp_k",
+     "offset": 8,
+     "type": "f32",
+     "unit": "K"
+    },
+    {
+     "count": 1,
+     "name": "temp_cdegc",
+     "offset": 12,
+     "type": "i16",
+     "unit": "cdegC"
+    },
+    {
+     "bits": {
+      "range": 0,
+      "spike": 1,
+      "stuck": 2
+     },
+     "count": 1,
+     "name": "health",
+     "offset": 14,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 15,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1026,
+   "kind": "bus",
+   "name": "trk_baro",
+   "size": 16,
+   "version": 2
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "ticket",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_number",
+     "offset": 4,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "code",
+     "offset": 6,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd",
+     "offset": 8,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "channel",
+     "offset": 9,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "find",
+     "offset": 10,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "ble": 1,
+      "lora": 0,
+      "usb": 2
+     },
+     "name": "path",
+     "offset": 11,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "recheck": 0
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 12,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 3,
+     "name": "pad0",
+     "offset": 13,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1038,
+   "kind": "bus",
+   "name": "trk_command",
+   "size": 16,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "next",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1053,
+   "kind": "bus",
+   "name": "trk_command_counter",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "ticket",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_number",
+     "offset": 4,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "result",
+     "offset": 6,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "prep_latch",
+     "offset": 7,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1039,
+   "kind": "bus",
+   "name": "trk_command_outcome",
+   "size": 8,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "ticket",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_number",
+     "offset": 4,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "next",
+     "offset": 6,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "result",
+     "offset": 8,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "ble": 1,
+      "lora": 0,
+      "usb": 2
+     },
+     "name": "path",
+     "offset": 9,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 2,
+     "name": "pad0",
+     "offset": 10,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1042,
+   "kind": "bus",
+   "name": "trk_command_reply",
+   "size": 12,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "next",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "last",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "code",
+     "offset": 4,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd",
+     "offset": 6,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "channel",
+     "offset": 7,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "find",
+     "offset": 8,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "have_counter": 0,
+      "have_last": 1
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 9,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 2,
+     "name": "pad0",
+     "offset": 10,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1040,
+   "kind": "bus",
+   "name": "trk_command_restore",
+   "size": 12,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "enum": {
+      "command": 1,
+      "event": 2,
+      "guide": 5,
+      "restore": 4,
+      "timer": 3
+     },
+     "name": "input",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum_ref": "state",
+     "name": "from_state",
+     "offset": 1,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum_ref": "state",
+     "name": "to_state",
+     "offset": 2,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "row",
+     "offset": 3,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "detail",
+     "offset": 4,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "result",
+     "offset": 6,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 7,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1063,
+   "kind": "bus",
+   "name": "trk_decision",
+   "size": 8,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "event_t_us",
+     "offset": 0,
+     "type": "i64",
+     "unit": "us"
+    },
+    {
+     "count": 1,
+     "name": "event_seq",
+     "offset": 8,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "alt_agl_m",
+     "offset": 12,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 1,
+     "name": "vz_up_mps",
+     "offset": 16,
+     "type": "f32",
+     "unit": "m/s"
+    },
+    {
+     "count": 1,
+     "name": "peak_alt_m",
+     "offset": 20,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 1,
+     "enum_ref": "event_code",
+     "name": "event",
+     "offset": 24,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "fallback": 2,
+      "near_pad": 1,
+      "none": 0,
+      "still": 3
+     },
+     "name": "landing",
+     "offset": 25,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "full": 0,
+      "half": 1
+     },
+     "name": "keep",
+     "offset": 26,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "full_rate": 1
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 27,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 28,
+     "type": "u32",
+     "unit": "1"
+    }
+   ],
+   "id": 1037,
+   "kind": "bus",
+   "name": "trk_event",
+   "size": 32,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "cmd_number",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd",
+     "offset": 2,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 3,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1054,
+   "kind": "bus",
+   "name": "trk_last_command",
+   "size": 4,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "alt_agl_m",
+     "offset": 0,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 3,
+     "name": "vel_n_mps",
+     "offset": 4,
+     "type": "f32",
+     "unit": "m/s"
+    },
+    {
+     "count": 3,
+     "name": "acc_n_mps2",
+     "offset": 16,
+     "type": "f32",
+     "unit": "m/s^2"
+    },
+    {
+     "count": 1,
+     "name": "lat_e7",
+     "offset": 28,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "lon_e7",
+     "offset": 32,
+     "type": "i32",
+     "unit": "deg*1e-7"
+    },
+    {
+     "count": 1,
+     "name": "alt_sigma_m",
+     "offset": 36,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 1,
+     "name": "vel_d_sigma_mps",
+     "offset": 40,
+     "type": "f32",
+     "unit": "m/s"
+    },
+    {
+     "count": 1,
+     "name": "pos_sigma_m",
+     "offset": 44,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 1,
+     "name": "pos_age_ms",
+     "offset": 48,
+     "type": "u32",
+     "unit": "ms"
+    },
+    {
+     "bits": {
+      "accel": 2,
+      "baro": 0,
+      "gps": 1
+     },
+     "count": 1,
+     "name": "sensors",
+     "offset": 52,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "acc": 4,
+      "alt": 0,
+      "pos": 3,
+      "vel_d": 1,
+      "vel_ne": 2
+     },
+     "count": 1,
+     "name": "valid",
+     "offset": 53,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "good": 2,
+      "none": 0,
+      "poor": 1
+     },
+     "name": "quality",
+     "offset": 54,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 55,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1052,
+   "kind": "bus",
+   "name": "trk_nav",
+   "size": 56,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 20,
+     "name": "record",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1056,
+   "kind": "bus",
+   "name": "trk_restart",
+   "size": 20,
+   "version": 1
+  },
+  {
+   "fields": [
+    {
+     "count": 20,
+     "name": "record",
+     "offset": 0,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "cmd_next",
+     "offset": 20,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "profile_active",
+     "offset": 22,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "profile_stored",
+     "offset": 23,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "prep_latch",
+     "offset": 24,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "have_counter": 0,
+      "profile_stored": 1
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 25,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 26,
+     "type": "u16",
+     "unit": "1"
+    }
+   ],
+   "id": 1056,
+   "kind": "bus",
+   "name": "trk_restart",
+   "size": 28,
+   "version": 2
+  },
+  {
+   "fields": [
+    {
+     "count": 1,
+     "name": "ticket",
+     "offset": 0,
+     "type": "u32",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "len",
+     "offset": 4,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 18,
+     "name": "uplink",
+     "offset": 5,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 23,
+     "type": "u8",
+     "unit": "1"
+    }
+   ],
+   "id": 1041,
+   "kind": "bus",
+   "name": "trk_unlock_request",
+   "size": 24,
+   "version": 1
   }
  ],
+ "log": {
+  "head": {
+   "fields": [
+    {
+     "const": 19651,
+     "count": 1,
+     "name": "sync",
+     "offset": 0,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "type",
+     "offset": 2,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "version",
+     "offset": 4,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "replay": 1,
+      "republished": 0,
+      "stale": 2
+     },
+     "count": 1,
+     "name": "flags",
+     "offset": 5,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "len",
+     "offset": 6,
+     "type": "u16",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "t_us",
+     "offset": 8,
+     "type": "i64",
+     "unit": "us"
+    }
+   ],
+   "size": 16
+  },
+  "max_payload": 1024,
+  "types": [
+   {
+    "fields": [
+     {
+      "count": 1,
+      "name": "format_version",
+      "offset": 0,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "enum": {
+       "flight": 0,
+       "sim": 1
+      },
+      "name": "sim_bit",
+      "offset": 2,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "header_flags",
+      "offset": 3,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "log_id",
+      "offset": 4,
+      "type": "u32",
+      "unit": "1"
+     },
+     {
+      "count": 32,
+      "name": "firmware_bytes",
+      "offset": 8,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "next",
+      "offset": 40,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "last",
+      "offset": 42,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "enum": {
+       "accepted": 1,
+       "carry": 2
+      },
+      "name": "kind",
+      "offset": 44,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "bits": {
+       "have_last": 0
+      },
+      "count": 1,
+      "name": "flags",
+      "offset": 45,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "cmd",
+      "offset": 46,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "channel",
+      "offset": 47,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "code",
+      "offset": 48,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "find",
+      "offset": 50,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "prep_latch",
+      "offset": 51,
+      "type": "u8",
+      "unit": "1"
+     }
+    ],
+    "name": "flight_header",
+    "size": 52,
+    "type": 2,
+    "version": 2
+   },
+   {
+    "name": "link_bulk",
+    "type": 4,
+    "version": 1
+   },
+   {
+    "fields": [
+     {
+      "count": 1,
+      "enum": {
+       "apogee": 7,
+       "arm": 1,
+       "close": 5,
+       "landing": 8,
+       "launch": 2,
+       "overflow": 6,
+       "reboot": 3,
+       "unlock": 4
+      },
+      "name": "kind",
+      "offset": 0,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "enum": {
+       "flight": 1,
+       "landed": 2,
+       "pad": 0
+      },
+      "name": "area",
+      "offset": 1,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "bits": {
+       "overflow": 0
+      },
+      "count": 1,
+      "name": "flags",
+      "offset": 2,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "pad0",
+      "offset": 3,
+      "type": "u8",
+      "unit": "1"
+     }
+    ],
+    "name": "marker",
+    "size": 4,
+    "type": 5,
+    "version": 1
+   },
+   {
+    "name": "link_event",
+    "type": 6,
+    "version": 1
+   },
+   {
+    "fields": [
+     {
+      "count": 1,
+      "name": "level",
+      "offset": 0,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "bits": {
+       "cut": 0
+      },
+      "count": 1,
+      "name": "text_flags",
+      "offset": 1,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "scope_len",
+      "offset": 2,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "pad0",
+      "offset": 3,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "text_len",
+      "offset": 4,
+      "type": "u16",
+      "unit": "1"
+     }
+    ],
+    "name": "text_line",
+    "size": 6,
+    "type": 7,
+    "version": 1
+   },
+   {
+    "fields": [
+     {
+      "count": 1,
+      "enum": {
+       "boot": 0,
+       "fix": 1
+      },
+      "name": "kind",
+      "offset": 0,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "name_len",
+      "offset": 1,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 46,
+      "name": "name",
+      "offset": 2,
+      "type": "u8",
+      "unit": "1"
+     }
+    ],
+    "name": "log_name",
+    "size": 48,
+    "type": 11,
+    "version": 1
+   },
+   {
+    "fields": [
+     {
+      "count": 1,
+      "name": "channel",
+      "offset": 0,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "cont_before",
+      "offset": 1,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "firing_current",
+      "offset": 2,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "cont_after",
+      "offset": 3,
+      "type": "u8",
+      "unit": "1"
+     }
+    ],
+    "name": "ematch_test",
+    "size": 4,
+    "type": 12,
+    "version": 1
+   },
+   {
+    "fields": [
+     {
+      "count": 1,
+      "name": "next",
+      "offset": 0,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "last",
+      "offset": 2,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "enum": {
+       "accepted": 1,
+       "carry": 2
+      },
+      "name": "kind",
+      "offset": 4,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "bits": {
+       "have_last": 0
+      },
+      "count": 1,
+      "name": "flags",
+      "offset": 5,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "cmd",
+      "offset": 6,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "channel",
+      "offset": 7,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "code",
+      "offset": 8,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "find",
+      "offset": 10,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "prep_latch",
+      "offset": 11,
+      "type": "u8",
+      "unit": "1"
+     }
+    ],
+    "name": "command_state",
+    "size": 12,
+    "type": 14,
+    "version": 1
+   },
+   {
+    "fields": [
+     {
+      "count": 1,
+      "enum": {
+       "command": 1,
+       "event": 2,
+       "guide": 5,
+       "restore": 4,
+       "timer": 3
+      },
+      "name": "input",
+      "offset": 0,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "enum": {
+       "armed": 2,
+       "boost": 3,
+       "boot": 0,
+       "descent": 4,
+       "fault": 6,
+       "retrieval": 5,
+       "safe": 1
+      },
+      "name": "from_state",
+      "offset": 1,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "enum": {
+       "armed": 2,
+       "boost": 3,
+       "boot": 0,
+       "descent": 4,
+       "fault": 6,
+       "retrieval": 5,
+       "safe": 1
+      },
+      "name": "to_state",
+      "offset": 2,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "row",
+      "offset": 3,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "detail",
+      "offset": 4,
+      "type": "u16",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "result",
+      "offset": 6,
+      "type": "u8",
+      "unit": "1"
+     },
+     {
+      "count": 1,
+      "name": "pad0",
+      "offset": 7,
+      "type": "u8",
+      "unit": "1"
+     }
+    ],
+    "name": "decision",
+    "size": 8,
+    "type": 15,
+    "version": 1
+   }
+  ],
+  "version": 2
+ },
  "msg_max": 256,
  "topic_ids": {
+  "baro_health": 1050,
   "baro_sample": 260,
   "download_confirm": 1286,
   "fire_request": 516,
   "flight_state": 515,
+  "flush_request": 1057,
+  "gps_health": 1043,
   "gps_pvt": 1025,
+  "gps_raw": 1044,
+  "gps_week": 1045,
   "gs_envelope": 1283,
+  "guide_command": 1061,
   "guide_health": 1033,
   "guide_jump": 1287,
   "guide_nav": 1032,
   "guide_state": 1031,
+  "health_board": 1051,
   "highg_sample": 258,
   "imu_sample": 257,
+  "last_fix": 1064,
+  "led_request": 1060,
   "link_stats": 1036,
+  "log_density": 1048,
   "log_record": 1282,
+  "log_recovery": 1059,
+  "logger_health": 1058,
   "lora_packet": 1281,
   "lora_uplink": 1284,
   "mag_sample": 259,
   "nav_correction": 514,
   "nav_state": 513,
+  "power_level": 1046,
   "power_state": 770,
   "pyro_cont": 771,
   "pyro_status": 769,
   "reported_state": 1035,
   "restart_record": 1285,
-  "s3_time": 1034,
+  "retrieval_profile": 1062,
+  "retrieval_wake": 1047,
   "servo_rail": 772,
+  "time_model": 1049,
   "trk_accel": 1027,
   "trk_baro": 1026,
+  "trk_command": 1038,
+  "trk_command_counter": 1053,
+  "trk_command_outcome": 1039,
+  "trk_command_reply": 1042,
+  "trk_command_restore": 1040,
+  "trk_decision": 1063,
+  "trk_event": 1037,
   "trk_health": 1029,
+  "trk_last_command": 1054,
+  "trk_nav": 1052,
   "trk_power": 1028,
-  "trk_snapshot": 1030
+  "trk_restart": 1056,
+  "trk_snapshot": 1030,
+  "trk_unlock_request": 1041
  },
  "wire": [
   {
@@ -1687,6 +4548,12 @@ const TABLE = {
      "unit": "1"
     },
     {
+     "ack": {
+      "batt_warn": 1793,
+      "fault_armed": 2561,
+      "log_warn": 2051,
+      "no_gps": 1025
+     },
      "bits": {
       "baro_fault": 1,
       "batt_block": 5,
@@ -1738,6 +4605,7 @@ const TABLE = {
       "fixture": 8,
       "held_missed": 10,
       "moving": 14,
+      "no_beeper": 16,
       "nogo": 5,
       "none": 0,
       "not_applied": 13,
@@ -1799,12 +4667,50 @@ const TABLE = {
      },
      "type": "u8",
      "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "peak_alt_m",
+     "offset": 52,
+     "type": "f32",
+     "unit": "m"
+    },
+    {
+     "count": 1,
+     "enum": {
+      "good": 2,
+      "none": 0,
+      "poor": 1
+     },
+     "name": "nav_quality",
+     "offset": 56,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "bits": {
+      "accel": 2,
+      "baro": 0,
+      "gps": 1
+     },
+     "count": 1,
+     "name": "nav_sensors",
+     "offset": 57,
+     "type": "u8",
+     "unit": "1"
+    },
+    {
+     "count": 1,
+     "name": "pad0",
+     "offset": 58,
+     "type": "u16",
+     "unit": "1"
     }
    ],
    "id": 1281,
    "kind": "wire",
    "name": "lora_packet",
-   "size": 52,
+   "size": 60,
    "version": 4
   },
   {
@@ -1836,6 +4742,7 @@ const TABLE = {
       "find": 11,
       "fire_held": 9,
       "keepalive": 10,
+      "retrieval_profile": 13,
       "sim_boost": 6,
       "sim_off": 5,
       "sim_on": 4,
@@ -1924,6 +4831,7 @@ const TABLE = {
       "fired": 3,
       "launch": 1,
       "phase": 2,
+      "profile": 6,
       "retrieval": 4,
       "sim": 5
      },
@@ -2265,16 +5173,79 @@ function encodeFrame(name, values) {
   return out;
 }
 
+// The flight log (proto/log_record.yaml): head, payload, CRC-32/ISO-HDLC over head and payload.
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+const LOG_HEAD = { name: "log_record", size: TABLE.log.head.size, fields: TABLE.log.head.fields };
+const LOG_SYNC = LOG_HEAD.fields.find((f) => f.name === "sync");
+const LOG_LEN = LOG_HEAD.fields.find((f) => f.name === "len");
+// The layout of one record's payload: {name, layout} with layout undefined when this table has none
+// for that type and version (a TBD payload, a newer version, or an unknown type).
+function logLayout(type, version) {
+  const only = TABLE.log.types.find((t) => t.type === type);
+  if (only) return { name: only.name, layout: only.fields && only.version === version ? { name: only.name, size: only.size, fields: only.fields } : undefined };
+  const name = Object.keys(TABLE.topic_ids).find((k) => TABLE.topic_ids[k] === type);
+  return { name, layout: name === undefined ? undefined : TABLE.layouts.find((l) => l.name === name && l.version === version) };
+}
+// Every record in a log file whose CRC holds: [{offset, type, name, version, flags, t_us, payload,
+// values}] and the bytes skipped while resyncing. t_us is the record's board time, a BigInt. values
+// is the decoded payload when the table has its layout, else null; bytes after a layout's fixed
+// part (a text line's text) stay in payload for the caller.
+function decodeLog(bytes) {
+  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes.buffer || bytes, bytes.byteOffset || 0, bytes.byteLength);
+  const dv = view(buf), hs = LOG_HEAD.size, records = [];
+  let i = 0, skipped = 0;
+  while (i + hs + 4 <= buf.length) {
+    const len = get(dv, LOG_LEN.type, i + LOG_LEN.offset), end = i + hs + len;
+    if (get(dv, LOG_SYNC.type, i + LOG_SYNC.offset) !== LOG_SYNC.const || len > TABLE.log.max_payload || end + 4 > buf.length ||
+        crc32(buf.subarray(i, end)) !== dv.getUint32(end, true)) { i++; skipped++; continue; }
+    const head = decodeLayout(LOG_HEAD, buf.subarray(i, i + hs));
+    const payload = buf.subarray(i + hs, end), found = logLayout(head.type, head.version);
+    let values = null;
+    if (found.layout && payload.length >= found.layout.size) values = decodeLayout(found.layout, payload.subarray(0, found.layout.size));
+    records.push({ offset: i, type: head.type, name: found.name, version: head.version, flags: head.flags, t_us: head.t_us, payload, values });
+    i = end + 4;
+  }
+  return { records, skipped: skipped + buf.length - i };
+}
+// One record's bytes. r: {name, version?, flags?, t_us, values, tail?}; tail is the bytes after the
+// layout's fixed part.
+function encodeLogRecord(r) {
+  const only = TABLE.log.types.find((t) => t.name === r.name);
+  const type = only ? only.type : TABLE.topic_ids[r.name];
+  const version = r.version !== undefined ? r.version : only ? only.version : TABLE.current[r.name];
+  const found = logLayout(type, version);
+  if (!found.layout) throw new Error("log record " + r.name + " v" + version + ": no layout");
+  const fixed = encodeLayout(found.layout, r.values), tail = r.tail || new Uint8Array(0), hs = LOG_HEAD.size;
+  const out = new Uint8Array(hs + fixed.length + tail.length + 4);
+  out.set(encodeLayout(LOG_HEAD, { type, version, flags: r.flags || 0, len: fixed.length + tail.length, t_us: r.t_us }), 0);
+  out.set(fixed, hs); out.set(tail, hs + fixed.length);
+  new DataView(out.buffer).setUint32(out.length - 4, crc32(out.subarray(0, out.length - 4)), true);
+  return out;
+}
+
 // Names of the set bits / the enum name of a field value, for display.
 function bitNames(f, v) { return Object.keys(f.bits || {}).filter((k) => (Number(v) >> f.bits[k]) & 1); }
-function enumName(f, v) { const m = f.mask === undefined ? -1 : f.mask; return Object.keys(f.enum || {}).find((k) => f.enum[k] === (Number(v) & m)); }
+// A field's enum values: its own map, or the named enum it references (f.enum_ref, TABLE.enums).
+function enumOf(f) { return f.enum_ref !== undefined ? TABLE.enums[f.enum_ref].values : (f.enum || {}); }
+function enumName(f, v) { const m = f.mask === undefined ? -1 : f.mask; const e = enumOf(f); return Object.keys(e).find((k) => e[k] === (Number(v) & m)); }
 // Shared meanings (proto/SCHEMA.md): the hard-stop bits of a field, and the rank rule.
 function hardStopMask(f) { return (f.hard_stop || []).reduce((m, b) => m | (1 << f.bits[b]), 0); }
 function hardStops(f, v) { return (f.hard_stop || []).filter((b) => (Number(v) >> f.bits[b]) & 1); }
+// The ack_warning code of a warn bit name, or undefined for a hard stop or an unknown name.
+function ackCode(f, bit) { return (f.ack || {})[bit]; }
 function rank(f, v) { const k = enumName(f, v); return k === undefined ? 0 : (f.rank || {})[k] || 0; }
 function mostSevere(f, values) { return values.length ? values.reduce((best, v) => (rank(f, v) > rank(f, best) ? v : best)) : 0; }
 function fieldOf(name, field) { return wireOf(name).fields.find((x) => x.name === field); }
 
-const HTG4Msg = { TABLE, DecodeError, decode, encode, decodeMsg, decodeWire, encodeWire, decodeFrame, encodeFrame, decodeLayout, encodeLayout, bitNames, enumName, hardStopMask, hardStops, rank, mostSevere, fieldOf };
+const HTG4Msg = { TABLE, DecodeError, decode, encode, decodeMsg, decodeWire, encodeWire, decodeFrame, encodeFrame, decodeLayout, encodeLayout, crc32, decodeLog, encodeLogRecord, bitNames, enumOf, enumName, hardStopMask, hardStops, ackCode, rank, mostSevere, fieldOf };
 if (typeof module !== "undefined" && module.exports) module.exports = HTG4Msg;
 if (typeof globalThis !== "undefined") globalThis.HTG4Msg = HTG4Msg;

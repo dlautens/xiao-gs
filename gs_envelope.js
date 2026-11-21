@@ -22,7 +22,7 @@
   const INTENT_LEN = 8;
   // Relay hold state in the type 3 report (gs_cmd.hpp HoldState).
   const HOLD = ["idle", "holding", "echoed", "no_reply"];
-  // A19 pad downlink period is 5 s; a packet older than two periods is shown as stale.
+  // The pad downlink period is 5 s; a packet older than two periods is shown as stale.
   const STALE_AFTER_S = 10;
 
   function parse(buf) {
@@ -94,7 +94,7 @@
     return out;
   }
 
-  // Downlink loss from seq gaps (A19-4). Counts each new seq once; wraps at 16 bits.
+  // Downlink loss from seq gaps. Counts each new seq once; wraps at 16 bits.
   function LossCounter() {
     this.last = null;
     this.got = 0;
@@ -124,11 +124,11 @@
     return fresh;
   };
 
-  // ---- Page viewer (DECISIONS HG-242) ----
+  // ---- Page viewer ----
   // The page is a viewer and a sender. It keeps the selected view, the last tap, the Arm confirm
   // step, the find options being chosen and its keepalive timer, and decides nothing: every line
   // below is a field of the last packet, envelope or command report put into words. A tap becomes
-  // one intent; the relay holds, signs and retries it, and the rocket decides (HG-241). A view
+  // one intent; the relay holds, signs and retries it, and the rocket decides. A view
   // changes only in selectView(), which the page calls from a tab tap, so the screen does not
   // change under the operator's finger.
   const VIEWS = ["pad", "flight", "bench", "link"];
@@ -169,7 +169,10 @@
   const RETRIEVAL_STEP = ["none", "latched", "find received", "Bluetooth on", "unlock pending"];
   const EMATCH_STATE = ["idle", "enabled", "first held message received", "fired", "cancelled", "refused"];
   const CONT = ["open", "marginal", "ok", "unknown"];
-  // The armed keepalive is the page's timer (HG-242): provisional 20 s (David, 2026-11-12). It runs
+  // Nav's summary (nav_quality) and the inputs its filter uses (nav_sensors bits), issue #507.
+  const NAV_QUALITY = ["no estimate", "reduced accuracy", "good"];
+  const NAV_SENSORS = ["barometer", "GPS", "accelerometer"];
+  // The armed keepalive is the page's timer: provisional 20 s (David, 2026-11-12). It runs
   // only while the rocket is armed on the pad and the page is in the foreground (PG-3).
   const KEEPALIVE_MS = 20000;
   // Display wording for the command in flight and its outcome (lora_uplink cmd names).
@@ -186,8 +189,8 @@
     ematch_enable: { label: "E-match test", doing: "enabling e-match test" },
     fire_held: { label: "Fire held", doing: "holding" },
   };
-  // Each cmd_result put into words, with the next step for a refusal (HG-242: a refusal's reason and
-  // next step until a new command or a state change). The rocket decides; the page only reads it.
+  // Each cmd_result put into words, with the next step for a refusal (a refusal's reason and
+  // next step stay until a new command or a state change). The rocket decides; the page only reads it.
   const RESULT = {
     worked: { text: "worked" },
     wrong_phase: { text: "refused, wrong phase", next: "The rocket does not take this command in its current phase." },
@@ -204,6 +207,7 @@
     not_applied: { text: "not applied", next: "Tap again." },
     moving: { text: "refused, the rocket is moving", next: "Hold the rocket still for 10 s, then tap again." },
     wrong_path: { text: "refused, wrong path", next: "Unlock over Bluetooth or USB, not LoRa." },
+    no_beeper: { text: "refused, no beeper on this rocket", next: "Use the Bluetooth Find instead." },
   };
   const FIND_OPTS = [["beeper", "Beeper"], ["ble", "Bluetooth"], ["wifi", "Wi-Fi"]];
   const ICON = {
@@ -240,7 +244,7 @@
     this.repeats = new RepeatFilter();
     this.view = "pad"; // kept by the page, with the tap and keepalive state below
     this.lastTap = null; // { label, time, tap, status: confirm | cancelled | sending | sent | not_sent, error }
-    this.confirmArm = false; // the confirm step before Arm (HG-241)
+    this.confirmArm = false; // the confirm step before Arm
     this.confirmUnlock = false; // the confirm step before the rocket-found unlock (#308)
     // Find options being chosen. Default beeper and Bluetooth: the 0.x retrieval walk-up and the
     // Bluetooth log download and unlock; Wi-Fi download comes later (#331).
@@ -255,7 +259,7 @@
     this.fresh = false;
     this.pkt = null; // last decoded packet
     this.err = "";
-    this.unread = false; // the newest packet could not be read (A21-4)
+    this.unread = false; // the newest packet could not be read
   }
   Viewer.prototype.field = function (name) {
     return this.wire.fields.find(function (f) { return f.name === name; });
@@ -320,11 +324,16 @@
         intent = { cmd: "unlock", via: "rocket-ble" };
       }
     } else if (name === "ack") {
-      // The ack needs the warning's GO-NOGO code (lora_uplink code). The bit-to-code table is held
-      // only by the rocket's cycle library today, so the page has no code to send.
+      // One ack_warning per tap, with the code the format file gives that warn bit (warn.ack).
+      // A hard stop or a bit the file does not name has no code, so nothing is sent.
       tap.label = "Ack " + (WARN[arg] || arg);
-      tap.status = "not_sent";
-      tap.error = "the warning code for an ack is not in the format file yet";
+      const code = this.Msg.ackCode(this.field("warn"), arg);
+      if (code === undefined) {
+        tap.status = "not_sent";
+        tap.error = "this warning has no ack code";
+      } else {
+        intent = { cmd: "ack_warning", code: code };
+      }
     } else {
       return null;
     }
@@ -351,7 +360,7 @@
     const on = FIND_OPTS.filter(function (o) { return opts[o[0]]; }).map(function (o) { return o[1].toLowerCase(); });
     return on.length ? on.join(", ") : "all off";
   };
-  // The keepalive timer (HG-242, PG-3). True when the page should write a keepalive now: armed on
+  // The keepalive timer (PG-3). True when the page should write a keepalive now: armed on
   // the pad, Bluetooth up, the page in the foreground, no command held at the relay, and 20 s since
   // the last one. The first period starts when the page first sees the rocket armed, so a reload
   // sends nothing at once (PG-2). Backgrounding pauses it; back in the foreground an overdue
@@ -400,12 +409,12 @@
       if (!this.isGo()) this.confirmArm = false; // the confirm step belongs to the GO view
       this.noteOutcome();
     } catch (e) {
-      // A21-4: a packet this page cannot read (wrong version or size) is reported, not shown.
+      // A packet this page cannot read (wrong version or size) is reported, not shown.
       this.unread = true;
       this.err = "packet not read: " + String(e.message || e);
     }
   };
-  // An outcome is shown until a new command or a state change (HG-242). The page notes the rocket
+  // An outcome is shown until a new command or a state change. The page notes the rocket
   // phase when it first sees each outcome; a later packet in another phase ends the display.
   Viewer.prototype.noteOutcome = function () {
     const c = this.cmd;
@@ -430,7 +439,7 @@
     if (name === "ematch_enable" || name === "fire_held") return { label: known.label + " channel " + c.channel, doing: known.doing };
     return known;
   };
-  // The command in flight and its outcome, from the relay's type 3 report (HG-241, HG-242). Null
+  // The command in flight and its outcome, from the relay's type 3 report. Null
   // when there is nothing to show: no report, Bluetooth down, idle, a keepalive (a keepalive the
   // rocket does not echo is silent; its line is on the armed pad view), or an outcome whose
   // phase has since changed.
@@ -452,7 +461,7 @@
     const r = RESULT[name] || { text: "outcome " + c.result + " (not known to this page)" };
     return { kind: name === "worked" ? "worked" : "refused", text: lbl.label + " " + r.text, next: r.next || "" };
   };
-  // A tap of this page's that the relay did not send because another command was held (HG-241).
+  // A tap of this page's that the relay did not send because another command was held.
   Viewer.prototype.refusedMine = function () {
     const c = this.cmd;
     return !!c && this.ble === "connected" && c.refused && !!this.lastTap && this.lastTap.status === "sent" && c.refusedTap === this.lastTap.tap;
@@ -473,7 +482,7 @@
       (this.unread ? " · packet not readable, see Link" : "") + " · " + packet;
     return { age: age, stale: stale || this.unread, weak: weak, bleUp: bleUp, level: level, text: text };
   };
-  // Rocket state as best known. armedText is the HG-242 GO view wording.
+  // Rocket state as best known. armedText is the GO view wording.
   Viewer.prototype.rocketState = function () {
     if (!this.pkt) return { word: "NO DATA", sub: "no packet yet", tone: "idle", text: "unknown", phase: null };
     const name = this.Msg.enumName(this.field("phase"), this.pkt.phase);
@@ -492,7 +501,7 @@
       sub += ", not armed";
       text += " (not armed)";
     }
-    // The command in flight beside the state, for example "pad safe (arming)" (HG-242).
+    // The command in flight beside the state, for example "pad safe (arming)".
     const c = this.cmd;
     if (c && this.ble === "connected" && c.state === "holding" && this.cmdName(c.cmd) !== "keepalive") {
       text += " (" + this.cmdLabel(c).doing + ")";
@@ -602,7 +611,7 @@
     }[t.status];
     return '<p class="note">Last tap: ' + esc(t.label) + ", " + esc(t.time) + ". " + esc(what) + "</p>";
   };
-  // The keepalive line on the armed pad view (HG-242): the page's own 20 s timer.
+  // The keepalive line on the armed pad view: the page's own 20 s timer.
   Viewer.prototype.keepaliveText = function (nowMs) {
     const k = this.keepalive;
     const c = this.cmd;
@@ -630,7 +639,7 @@
     if (p.lat_e7 === INT32_MIN || p.lon_e7 === INT32_MIN) return null;
     return (p.lat_e7 / 1e7).toFixed(6) + "," + (p.lon_e7 / 1e7).toFixed(6);
   };
-  // The Arm button, then the confirm step before Arm (HG-241): the first tap shows Confirm arm and
+  // The Arm button, then the confirm step before Arm: the first tap shows Confirm arm and
   // Cancel, and only Confirm arm sends. The button shows the rocket's own answer and is never
   // disabled by the page.
   Viewer.prototype.armHtml = function (p, fl) {
@@ -664,7 +673,7 @@
           return '<div class="item warn">' + ICON.warn + '<span class="name">' + esc(x.name) + "</span>" +
             (x.known ? '<button type="button" class="ack" data-press="ack" data-arg="' + esc(x.key) + '">Ack</button>' : '<span class="tag">not acked</span>') + "</div>";
         }).join("") || none) +
-        // The rocket's own answer (HG-242): flags bit ready_to_arm, set when an Arm sent now would
+        // The rocket's own answer: flags bit ready_to_arm, set when an Arm sent now would
         // work. The page shows it on the line and on the button and never works it out. The button is
         // not disabled by the page.
         (!p ? '<div class="ready unknown">' + ICON.clock + "<span>READY TO ARM: UNKNOWN</span></div>" :
@@ -693,6 +702,16 @@
     return old + card("Rocket", row("State", st.text)) +
       '<p class="note">The rocket is off the pad. Altitude, position and retrieval are on the Flight tab.</p>' + this.lastTapHtml();
   };
+  // The rocket's own estimate rows: nav's height above the pad, its vertical speed, the peak so far and nav's
+  // health. They come from nav, not the GPS fix, so they stay while gps_valid is clear.
+  Viewer.prototype.navRows = function (p) {
+    const q = p.nav_quality;
+    const used = NAV_SENSORS.filter(function (n, i) { return (p.nav_sensors >> i) & 1; });
+    const none = q === 0;
+    return row("Navigation", (NAV_QUALITY[q] || "quality " + q) + (none ? "" : ", from " + (used.join(", ") || "no sensor")),
+      none ? "stop" : q === 1 ? "warn" : "ok") +
+      row("Highest so far", p.peak_alt_m > 0 ? p.peak_alt_m.toFixed(0) + " m above ground" : "not launched");
+  };
   Viewer.prototype.flightHtml = function () {
     const p = this.pkt;
     if (!p) return card("Flight", row("Rocket", "no packet yet"));
@@ -710,8 +729,10 @@
         '<a class="btn" href="https://maps.google.com/?q=' + encodeURIComponent(pos) + '">Google Maps</a></div>';
     }
     return card("Flight",
-      row("Phase", st.text) + row("Altitude", p.alt_agl_m.toFixed(0) + " m above ground") +
-      row("Vertical speed", Math.abs(up).toFixed(1) + " m/s " + (up >= 0 ? "up" : "down")) +
+      row("Phase", st.text) +
+      row("Altitude", p.nav_quality === 0 ? "no estimate" : p.alt_agl_m.toFixed(0) + " m above ground") +
+      row("Vertical speed", p.nav_quality === 0 ? "no estimate" : Math.abs(up).toFixed(1) + " m/s " + (up >= 0 ? "up" : "down")) +
+      this.navRows(p) +
       row("Height (GPS)", (p.h_msl_cm / 100).toFixed(0) + " m above sea level")) +
       card("Position", pin + row("GPS", this.gpsText(), fl.gps_valid ? "ok" : "warn")) +
       card("Retrieval",
@@ -726,7 +747,7 @@
       card("Pyro",
         row("Fired", chList(p.pyro_fired)) + row("Continuity", cont) + row("Locked out", chList(p.pyro_locked)));
   };
-  // The find command (HG-230): one command that turns each of the beeper, Bluetooth and Wi-Fi on or
+  // The find command: one command that turns each of the beeper, Bluetooth and Wi-Fi on or
   // off. Shown in retrieval, where the rocket takes it. Each option says ON or off in words.
   Viewer.prototype.findHtml = function (st, fl) {
     if (st.phase !== "retrieval" && !fl.retrieval_latch) return "";

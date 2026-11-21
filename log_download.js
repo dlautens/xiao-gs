@@ -180,7 +180,7 @@
 
   const LOG_SYNC = 0x4cc3;
   const LOG_NAME_TYPE = 0x000b;
-  const LOG_HEADER = 12;
+  const LOG_HEADER = 16; // proto/log_record.yaml version 2
   const LOG_CRC = 4;
   const LOG_PAYLOAD_MAX = 1024;
   const LOG_NAME_MAX = 46;
@@ -240,6 +240,11 @@
     let hex = (logId >>> 0).toString(16);
     while (hex.length < 8) hex = "0" + hex;
     return "htg4-log-" + hex + ".bin";
+  }
+
+  // The flight review page's address for a log held in this page's memory (a blob: address).
+  function reviewAddress(blobUrl) {
+    return "flight_review.html#" + blobUrl;
   }
 
   function saveFile(name, bytes) {
@@ -406,6 +411,18 @@
       saveFile(fileName(logId, receiver.bytes()), receiver.bytes());
       saved = true;
     });
+    // View flight: hand the bytes received so far to the flight review page in a new tab. It reads
+    // them from this page's memory while this page stays open; nothing is stored or uploaded.
+    const view = ids.view ? $(ids.view) : null;
+    if (view) {
+      view.addEventListener("click", function () {
+        if (!receiver) {
+          error.textContent = "no log yet";
+          return;
+        }
+        window.open(reviewAddress(URL.createObjectURL(new Blob([receiver.bytes()], { type: "application/octet-stream" }))), "_blank");
+      });
+    }
   }
 
   const LogDownload = {
@@ -416,6 +433,7 @@
     DATA: DATA,
     UNLOCK: UNLOCK,
     UNLOCK_BYTES: UNLOCK_BYTES,
+    reviewAddress: reviewAddress,
     exchangeUnlock: exchangeUnlock,
     sendToRocket: sendToRocket,
     PAYLOAD: PAYLOAD,

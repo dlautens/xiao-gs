@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HT-G4 ground station</title>
-  <!-- The phone page (DECISIONS HG-242): a viewer. Used outdoors on an Android phone in Chrome,
+  <!-- The phone page: a viewer. Used outdoors on an Android phone in Chrome,
        often one-handed, so type is large, tap targets are at least 48 px, and every colour also
        carries a word or an icon. Self-contained: it loads only the three scripts beside it. -->
   <style>
@@ -108,11 +108,13 @@
       <div class="btns">
         <button id="log-btn" type="button">Download from XIAO-LOG</button>
         <button id="log-save" type="button">Save file</button>
+        <button id="log-view" type="button">View flight</button>
         <button id="log-confirm" type="button">Confirm saved</button>
         <button id="log-discard" type="button">Discard log</button>
       </div>
       <p id="log-st">idle</p>
       <p id="log-err"></p>
+      <div class="btns"><a class="btn" href="flight_review.html">Review a saved flight</a></div>
       <h2>Packet fields</h2>
       <div class="card" id="pkt"><div class="row"><span class="k">Packet</span><span class="v">no packet</span></div></div>
     </section>
@@ -132,9 +134,9 @@
   </nav>
   <!-- Generated codec (proto/gen/htg4_msg.js) and the envelope parser and viewer, served beside this page.
        log_download.js is the XIAO log transfer. It does not share the XIAO-GS connection. -->
-  <script src="htg4_msg.js"></script>
-  <script src="gs_envelope.js"></script>
-  <script src="log_download.js"></script>
+  <script src="htg4_msg.js?v=2575001"></script>
+  <script src="gs_envelope.js?v=2575001"></script>
+  <script src="log_download.js?v=2575001"></script>
 <script>
 (function () {
   "use strict";
@@ -200,7 +202,7 @@
   }
 
   // Writes one intent on the up characteristic. The relay holds it, signs it and retries it; the
-  // page does not re-send (HG-241). done(err) gets "" when the ground station took the write.
+  // page does not re-send. done(err) gets "" when the ground station took the write.
   function send(intent, done) {
     if (!up || viewer.ble !== "connected") {
       done("phone not connected to the ground station");
@@ -349,7 +351,7 @@
     },
   };
 })();
-LogDownload.bind({ button: "log-btn", save: "log-save", confirm: "log-confirm", discard: "log-discard", status: "log-st", error: "log-err" });
+LogDownload.bind({ button: "log-btn", save: "log-save", view: "log-view", confirm: "log-confirm", discard: "log-discard", status: "log-st", error: "log-err" });
 </script>
 </body>
 </html>
